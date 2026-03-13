@@ -72,8 +72,16 @@ export default function HomeScreen({ navigation }) {
             <TouchableOpacity
               key={card.title}
               style={styles.actionCard}
-              onPress={card.title === 'Farmer Profile' ? () => navigation.navigate('Profile') : undefined}
-              activeOpacity={card.title === 'Farmer Profile' ? 0.7 : 1}
+              onPress={
+                card.title === 'Farmer Profile'
+                  ? () => navigation.navigate('Profile')
+                  : card.title === 'Market Prices'
+                    ? () => navigation.navigate('Market')
+                    : undefined
+              }
+              activeOpacity={
+                card.title === 'Farmer Profile' || card.title === 'Market Prices' ? 0.7 : 1
+              }
             >
               <View style={[styles.cardAccent, { backgroundColor: card.bg }]} />
               <Text style={[styles.cardTitle, { color: card.color }]}>{card.title}</Text>

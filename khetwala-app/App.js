@@ -9,6 +9,7 @@ import LoginScreen from './src/screens/LoginScreen';
 import RegisterScreen from './src/screens/RegisterScreen';
 import HomeScreen from './src/screens/HomeScreen';
 import ProfileScreen from './src/screens/ProfileScreen';
+import MarketScreen from './src/screens/MarketScreen';
 import { COLORS } from './src/theme/colors';
 
 const Stack = createStackNavigator();
@@ -35,6 +36,7 @@ function RootNavigator() {
         <>
           <Stack.Screen name="Home" component={HomeScreen} />
           <Stack.Screen name="Profile" component={ProfileScreen} />
+          <Stack.Screen name="Market" component={MarketScreen} />
         </>
       )}
     </Stack.Navigator>

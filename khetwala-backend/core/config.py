@@ -17,6 +17,9 @@ class Settings(BaseSettings):
     api_port: int = Field(default=8000, alias='API_PORT')
     database_url: str = Field(default='sqlite:///./khetwala.db', alias='DATABASE_URL')
     secret_key: str = Field(default='change-this-in-production', alias='SECRET_KEY')
+    data_gov_api_key: str = Field(default='', alias='DATA_GOV_API_KEY')
+    data_gov_base_url: str = Field(default='https://api.data.gov.in', alias='DATA_GOV_BASE_URL')
+    data_gov_resource_id: str = Field(default='9ef84268-d588-465a-a308-a864a43d0070', alias='DATA_GOV_RESOURCE_ID')
 
 
 @lru_cache()

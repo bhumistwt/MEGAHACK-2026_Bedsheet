@@ -9,6 +9,8 @@ __pycache__/
 *.py[cod]
 .venv/
 venv/
+*.db
+khetwala-backend/*.db
 
 # Expo / React Native
 .expo/
