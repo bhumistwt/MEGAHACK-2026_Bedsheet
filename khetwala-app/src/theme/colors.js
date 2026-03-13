@@ -8,14 +8,17 @@ export const COLORS = {
   surfaceVariant: '#F0F2F5',
   onSurface: '#1C1B1F',
   onSurfaceVariant: '#6B7280',
+  info: '#0EA5E9',
   outline: '#D1D5DB',
   error: '#B91C1C',
 };
 
 export const TYPOGRAPHY = {
+  headlineMedium: { fontSize: 28, fontWeight: '700', lineHeight: 36 },
   headlineSmall: { fontSize: 24, fontWeight: '600', lineHeight: 32 },
   titleLarge: { fontSize: 22, fontWeight: '600', lineHeight: 28 },
   titleSmall: { fontSize: 14, fontWeight: '600', lineHeight: 20 },
+  labelSmall: { fontSize: 11, fontWeight: '500', lineHeight: 14 },
   bodyMedium: { fontSize: 14, fontWeight: '400', lineHeight: 20 },
   bodySmall: { fontSize: 12, fontWeight: '400', lineHeight: 16 },
 };
@@ -29,6 +32,7 @@ export const SPACING = {
 };
 
 export const RADIUS = {
+  xs: 8,
   md: 12,
   lg: 16,
   xl: 28,

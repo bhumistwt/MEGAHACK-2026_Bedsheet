@@ -10,6 +10,7 @@ import {
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useAuth } from '../context/AuthContext';
+import WeatherBanner from '../components/WeatherBanner';
 import { COLORS, ELEVATION, RADIUS, SPACING, TYPOGRAPHY } from '../theme/colors';
 
 const ACTION_CARDS = [
@@ -60,6 +61,11 @@ export default function HomeScreen({ navigation }) {
       </LinearGradient>
 
       <ScrollView contentContainerStyle={styles.contentContainer}>
+        <WeatherBanner
+          district={district === 'Not set' ? 'Nashik' : district}
+          onPress={() => navigation.navigate('Market')}
+        />
+
         <View style={styles.greetingCard}>
           <Text style={styles.greetingTitle}>Welcome back</Text>
           <Text style={styles.greetingSubtitle}>
@@ -131,6 +137,7 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.surface,
     borderRadius: RADIUS.lg,
     padding: SPACING.lg,
+    marginTop: SPACING.md,
     ...ELEVATION.level1,
   },
   greetingTitle: {
