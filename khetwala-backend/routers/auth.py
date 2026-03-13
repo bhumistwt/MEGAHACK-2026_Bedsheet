@@ -39,6 +39,11 @@ class TokenResponse(BaseModel):
 
 
 def create_access_token(user_id: int) -> str:
+    if not settings.secret_key or settings.secret_key == 'change-this-in-production':
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail='Authentication is not configured securely',
+        )
     expire = datetime.now(timezone.utc) + timedelta(days=ACCESS_TOKEN_EXPIRE_DAYS)
     payload = {'sub': str(user_id), 'exp': expire, 'iat': datetime.now(timezone.utc)}
     return jwt.encode(payload, settings.secret_key, algorithm=ALGORITHM)
@@ -75,6 +80,21 @@ def get_current_user(token: str, db: Session) -> User:
     if user is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail='User not found')
     return user
+
+
+def require_current_user(
+    authorization: Optional[str] = Header(default=None),
+    db: Session = Depends(get_db),
+) -> User:
+    if not authorization or not authorization.startswith('Bearer '):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail='Not authenticated')
+    token = authorization.replace('Bearer ', '', 1)
+    return get_current_user(token, db)
+
+
+def ensure_user_access(current_user: User, requested_user_id: int) -> None:
+    if int(current_user.id) != int(requested_user_id):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail='Forbidden for requested user')
 
 
 @router.post('/register', response_model=TokenResponse, status_code=status.HTTP_201_CREATED)

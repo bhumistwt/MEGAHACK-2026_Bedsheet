@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  Image,
   KeyboardAvoidingView,
   Platform,
   SafeAreaView,
@@ -13,6 +14,14 @@ import {
 } from 'react-native';
 import { useAuth } from '../context/AuthContext';
 import { COLORS } from '../theme/colors';
+
+const LOGO = require('../../assets/logo.png');
+
+const QUICK_ACCOUNTS = [
+  { name: 'Ashwin', phone: '9876543003', password: 'ashwin123456' },
+  { name: 'Prem', phone: '9876543001', password: 'prem123456' },
+  { name: 'Bhumi', phone: '9876543002', password: 'bhumi123456' },
+];
 
 export default function LoginScreen({ navigation }) {
   const { login, loginAsGuest } = useAuth();
@@ -48,11 +57,23 @@ export default function LoginScreen({ navigation }) {
     }
   };
 
+  const onQuickLogin = async (account) => {
+    setLoading(true);
+    try {
+      await login(account.phone, account.password);
+    } catch (error) {
+      const message = error?.response?.data?.detail || 'Unable to login with demo account.';
+      Alert.alert('Quick Login Failed', message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <SafeAreaView style={styles.safeArea}>
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.container}>
         <View style={styles.card}>
-          <Text style={styles.brand}>Khetwala</Text>
+          <Image source={LOGO} style={styles.logo} resizeMode="contain" />
           <Text style={styles.subtitle}>Sign in to continue</Text>
 
           <TextInput
@@ -81,6 +102,20 @@ export default function LoginScreen({ navigation }) {
             <Text style={styles.secondaryButtonText}>Continue as Guest</Text>
           </TouchableOpacity>
 
+          <Text style={styles.quickTitle}>Quick Demo Login</Text>
+          <View style={styles.quickRow}>
+            {QUICK_ACCOUNTS.map((account) => (
+              <TouchableOpacity
+                key={account.phone}
+                style={styles.quickChip}
+                onPress={() => onQuickLogin(account)}
+                disabled={loading}
+              >
+                <Text style={styles.quickChipText}>{account.name}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+
           <TouchableOpacity onPress={() => navigation.navigate('Register')}>
             <Text style={styles.link}>No account? Register</Text>
           </TouchableOpacity>
@@ -98,11 +133,11 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     padding: 20,
   },
-  brand: {
-    fontSize: 28,
-    fontWeight: '700',
-    color: COLORS.primary,
-    textAlign: 'center',
+  logo: {
+    width: 180,
+    height: 120,
+    alignSelf: 'center',
+    marginBottom: 4,
   },
   subtitle: {
     marginTop: 6,
@@ -142,6 +177,31 @@ const styles = StyleSheet.create({
   },
   secondaryButtonText: {
     color: COLORS.primary,
+    fontWeight: '600',
+  },
+  quickTitle: {
+    marginTop: 14,
+    marginBottom: 8,
+    textAlign: 'center',
+    color: COLORS.onSurfaceVariant,
+    fontWeight: '600',
+  },
+  quickRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 8,
+  },
+  quickChip: {
+    flex: 1,
+    borderWidth: 1,
+    borderColor: COLORS.outline,
+    borderRadius: 999,
+    paddingVertical: 8,
+    alignItems: 'center',
+    backgroundColor: COLORS.surface,
+  },
+  quickChipText: {
+    color: COLORS.onSurface,
     fontWeight: '600',
   },
   link: {

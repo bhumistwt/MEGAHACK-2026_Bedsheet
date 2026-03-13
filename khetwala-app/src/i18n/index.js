@@ -10,15 +10,17 @@ import en from './en';
 import hi from './hi';
 import mr from './mr';
 import gu from './gu';
+import kn from './kn';
 
 export const LANGUAGES = [
   { code: 'en', label: 'English',  nativeLabel: 'English'  },
   { code: 'hi', label: 'Hindi',    nativeLabel: 'हिंदी'    },
   { code: 'mr', label: 'Marathi',  nativeLabel: 'मराठी'    },
   { code: 'gu', label: 'Gujarati', nativeLabel: 'ગુજરાતી' },
+  { code: 'kn', label: 'Kannada',  nativeLabel: 'ಕನ್ನಡ'   },
 ];
 
-const dictionaries = { en, hi, mr, gu };
+const dictionaries = { en, hi, mr, gu, kn };
 
 /**
  * Resolve a dot-path key from a nested dictionary.

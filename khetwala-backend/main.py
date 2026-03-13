@@ -47,6 +47,7 @@ from routers.iot import router as iot_router
 from routers.photo_diagnostic import router as photo_diagnostic_router
 from routers.soil_health import router as soil_health_router
 from routers.blockchain import router as blockchain_router
+from routers.voice_agent import router as voice_agent_router
 
 # Database & ETL
 from db.session import init_db
@@ -192,6 +193,7 @@ def create_app() -> FastAPI:
     app.include_router(photo_diagnostic_router, prefix=api_prefix)
     app.include_router(soil_health_router, prefix=api_prefix)
     app.include_router(blockchain_router, prefix=api_prefix)
+    app.include_router(voice_agent_router, prefix=api_prefix)
 
     return app
 

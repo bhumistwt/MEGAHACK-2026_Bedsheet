@@ -467,16 +467,6 @@ export default {
     lesson: 'Learning',
   },
 
-  /* ── F8: Leaderboard ─────────────────────────────────────────── */
-  leaderboard: {
-    title: 'Village Champions',
-    myScore: 'My Score',
-    ranking: 'Full Rankings',
-    badges: 'Badge Levels',
-    howToImprove: 'How to Improve',
-    districtRank: 'District Rank',
-  },
-
   /* ── F9: Crop Diary ──────────────────────────────────────────── */
   cropDiary: {
     title: 'Crop Diary',

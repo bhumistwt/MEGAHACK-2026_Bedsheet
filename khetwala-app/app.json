@@ -4,9 +4,26 @@
     "slug": "khetwala",
     "version": "0.1.0",
     "orientation": "portrait",
+    "icon": "./assets/logo.png",
     "userInterfaceStyle": "light",
+    "splash": {
+      "image": "./assets/logo.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#F5F0E8"
+    },
     "android": {
-      "package": "com.pandeyashwin0.khetwala"
-    }
+      "package": "com.pandeyashwin0.khetwala",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/logo.png",
+        "backgroundColor": "#F5F0E8"
+      }
+    },
+    "ios": {
+      "bundleIdentifier": "com.pandeyashwin0.khetwala"
+    },
+    "web": {
+      "favicon": "./assets/logo.png"
+    },
+    "assets": ["./assets"]
   }
 }

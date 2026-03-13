@@ -239,6 +239,56 @@ class AriaConversation(Base):
     )
 
 
+class VoiceCallLog(Base):
+    __tablename__ = "voice_call_logs"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    call_sid = Column(String(128), nullable=False, unique=True, index=True)
+    direction = Column(String(20), nullable=False, default="inbound")
+    user_id = Column(Integer, nullable=True, index=True)
+    phone = Column(String(20), nullable=False, index=True)
+    language_code = Column(String(8), nullable=False, default="en")
+    status = Column(String(30), nullable=False, default="initiated")
+    feature_used = Column(String(80), nullable=True)
+    escalated_to_human = Column(Boolean, default=False)
+    escalation_reason = Column(Text, nullable=True)
+    summary = Column(Text, nullable=True)
+    started_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    ended_at = Column(DateTime, nullable=True)
+    duration_seconds = Column(Integer, nullable=True)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(
+        DateTime,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+
+    __table_args__ = (
+        Index("ix_voice_call_user_status", "user_id", "status"),
+        Index("ix_voice_call_phone_started", "phone", "started_at"),
+    )
+
+
+class VoiceCallTurnLog(Base):
+    __tablename__ = "voice_call_turn_logs"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    call_sid = Column(String(128), nullable=False, index=True)
+    user_id = Column(Integer, nullable=True, index=True)
+    role = Column(String(20), nullable=False)
+    transcript = Column(Text, nullable=False)
+    language_code = Column(String(8), nullable=False, default="en")
+    detected_intent = Column(String(80), nullable=True)
+    action_taken = Column(Text, nullable=True)
+    tool_payload = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+    __table_args__ = (
+        Index("ix_voice_turn_call_role", "call_sid", "role"),
+        Index("ix_voice_turn_call_created", "call_sid", "created_at"),
+    )
+
+
 class CropSimulation(Base):
     __tablename__ = "crop_simulations"
 

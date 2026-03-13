@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  Image,
   KeyboardAvoidingView,
   Platform,
   SafeAreaView,
@@ -13,6 +14,8 @@ import {
 } from 'react-native';
 import { useAuth } from '../context/AuthContext';
 import { COLORS } from '../theme/colors';
+
+const LOGO = require('../../assets/logo.png');
 
 export default function RegisterScreen({ navigation }) {
   const { register } = useAuth();
@@ -55,6 +58,7 @@ export default function RegisterScreen({ navigation }) {
     <SafeAreaView style={styles.safeArea}>
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.container}>
         <View style={styles.card}>
+          <Image source={LOGO} style={styles.logo} resizeMode="contain" />
           <Text style={styles.title}>Create Account</Text>
 
           <TextInput
@@ -108,6 +112,12 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.surface,
     borderRadius: 12,
     padding: 20,
+  },
+  logo: {
+    width: 160,
+    height: 100,
+    alignSelf: 'center',
+    marginBottom: 8,
   },
   title: {
     fontSize: 24,

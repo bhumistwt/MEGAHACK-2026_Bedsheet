@@ -1,0 +1,452 @@
+/**
+ * ARIA Voice Engine — Wake Word Detection, Transcription & Intent Parsing
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *
+ * Pure-function service (no React) that handles:
+ * 1. Audio recording via expo-av (dynamic import for Expo Go safety)
+ * 2. Audio → base64 conversion via expo-file-system
+ * 3. Gemini multimodal transcription (audio → text)
+ * 4. Wake word detection ("Hi Aria" pattern matching)
+ * 5. Intent parsing (local keyword match + Gemini NLU fallback)
+ * 6. Text-to-speech via expo-speech
+ */
+
+import * as FileSystem from 'expo-file-system';
+import * as Speech from 'expo-speech';
+import { NativeModules } from 'react-native';
+
+const GOOGLE_API_KEY = process.env.EXPO_PUBLIC_GOOGLE_API_KEY || '';
+const GEMINI_URL =
+  'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent';
+
+/* ─────────────────────────────────────────────────────────────────────────────
+ * Audio Module (lazy-loaded)
+ * ───────────────────────────────────────────────────────────────────────────── */
+
+let _Audio = null;
+let _audioChecked = false;
+
+/**
+ * Safely check if ExponentAV native module is registered
+ * before calling require('expo-av') which would throw a fatal error.
+ */
+const _isExpoAVAvailable = () => {
+  // Check new Expo Modules architecture
+  if (globalThis.expo?.modules?.ExponentAV) return true;
+  // Check classic NativeModules bridge
+  if (NativeModules?.ExponentAV) return true;
+  return false;
+};
+
+const ensureAudio = async () => {
+  if (_Audio) return _Audio;
+  if (_audioChecked) return null; // already failed once
+  _audioChecked = true;
+
+  // Guard: Don't even require the module if native code isn't available
+  if (!_isExpoAVAvailable()) {
+    console.log('[AriaVoice] ExponentAV native module not registered — skipping expo-av');
+    return null;
+  }
+
+  try {
+    const mod = require('expo-av');
+    if (mod && mod.Audio) {
+      _Audio = mod.Audio;
+      return _Audio;
+    }
+    return null;
+  } catch (e) {
+    console.log('[AriaVoice] expo-av not available:', e.message);
+    return null;
+  }
+};
+
+/* ─────────────────────────────────────────────────────────────────────────────
+ * Recording
+ * ───────────────────────────────────────────────────────────────────────────── */
+
+/**
+ * Request mic permission + start recording.
+ * @returns {Promise<Recording>}  expo-av Recording instance
+ */
+export const startRecording = async () => {
+  const Audio = await ensureAudio();
+  if (!Audio) throw new Error('expo-av unavailable');
+
+  const { status } = await Audio.requestPermissionsAsync();
+  if (status !== 'granted') throw new Error('MIC_DENIED');
+
+  await Audio.setAudioModeAsync({
+    allowsRecordingIOS: true,
+    playsInSilentModeIOS: true,
+  });
+
+  const { recording } = await Audio.Recording.createAsync(
+    Audio.RecordingOptionsPresets.HIGH_QUALITY
+  );
+  return recording;
+};
+
+/**
+ * Stop a recording and return its file URI.
+ */
+export const stopRecording = async (recording) => {
+  if (!recording) return null;
+  try {
+    await recording.stopAndUnloadAsync();
+    const Audio = await ensureAudio();
+    if (Audio) {
+      await Audio.setAudioModeAsync({
+        allowsRecordingIOS: false,
+        playsInSilentModeIOS: true,
+      });
+    }
+    return recording.getURI();
+  } catch {
+    return null;
+  }
+};
+
+/**
+ * Read a local audio file as a base64 string.
+ */
+export const audioToBase64 = async (uri) => {
+  return FileSystem.readAsStringAsync(uri, {
+    encoding: FileSystem.EncodingType.Base64,
+  });
+};
+
+/**
+ * Delete a temporary audio file.
+ */
+export const deleteAudio = (uri) => {
+  if (uri) FileSystem.deleteAsync(uri, { idempotent: true }).catch(() => {});
+};
+
+/* ─────────────────────────────────────────────────────────────────────────────
+ * Gemini Transcription
+ * ───────────────────────────────────────────────────────────────────────────── */
+
+/**
+ * Transcribe audio via Gemini 2.0-Flash multimodal API.
+ * @param {string} audioBase64  Base64-encoded audio data
+ * @param {string} mimeType     MIME type (default: audio/mp4 for AAC/m4a)
+ * @returns {string}            Transcribed text, or '' if silence
+ */
+export const transcribeAudio = async (audioBase64, mimeType = 'audio/mp4') => {
+  if (!GOOGLE_API_KEY) throw new Error('GOOGLE_API_KEY missing');
+
+  const res = await fetch(`${GEMINI_URL}?key=${GOOGLE_API_KEY}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      contents: [
+        {
+          parts: [
+            {
+              inline_data: {
+                mime_type: mimeType,
+                data: audioBase64,
+              },
+            },
+            {
+              text:
+                'Transcribe this audio exactly as spoken. ' +
+                'Output ONLY the transcription text, no explanations. ' +
+                'If the audio has no speech or only background noise, output exactly: [SILENCE]',
+            },
+          ],
+        },
+      ],
+      generationConfig: { temperature: 0.0, maxOutputTokens: 300 },
+    }),
+  });
+
+  if (!res.ok) {
+    const body = await res.text();
+    throw new Error(`Gemini transcription ${res.status}: ${body.slice(0, 200)}`);
+  }
+
+  const data = await res.json();
+  const text = (data?.candidates?.[0]?.content?.parts?.[0]?.text || '').trim();
+  if (!text || text === '[SILENCE]') return '';
+  return text;
+};
+
+/* ─────────────────────────────────────────────────────────────────────────────
+ * Wake Word Detection
+ * ───────────────────────────────────────────────────────────────────────────── */
+
+const WAKE_STRICT = [
+  /\bhi\s*aria\b/i,
+  /\bhey\s*aria\b/i,
+  /\bhai\s*ariya\b/i,
+  /\bhi\s*ariya\b/i,
+  /\bok(?:ay)?\s*aria\b/i,
+  /\bहाय?\s*आरिया\b/,
+  /\bहाई?\s*आरिया\b/,
+  /\bहाय?\s*एरिया\b/,
+];
+
+const WAKE_LOOSE = /\baria\b|\bariya\b|\bआरिया\b/i;
+
+/**
+ * Does the transcript contain the "Hi Aria" wake word?
+ */
+export const containsWakeWord = (transcript) => {
+  if (!transcript) return false;
+  for (const re of WAKE_STRICT) if (re.test(transcript)) return true;
+  return WAKE_LOOSE.test(transcript);
+};
+
+/**
+ * Strip the wake-word prefix from a transcript to get the actual command.
+ * "Hi Aria, show mandi prices" → "show mandi prices"
+ */
+export const extractCommand = (transcript) => {
+  if (!transcript) return '';
+  const cleaned = transcript
+    .replace(
+      /^(hi|hey|hai|ok(?:ay)?|हाय?|हाई?)\s*(aria|ariya|आरिया|एरिया)\s*[,.\-!?\s]*/i,
+      ''
+    )
+    .trim();
+  return cleaned || transcript;
+};
+
+/* ─────────────────────────────────────────────────────────────────────────────
+ * Intent Parsing
+ * ───────────────────────────────────────────────────────────────────────────── */
+
+/** @typedef {{ intent: string, screen?: string, action?: string, params?: object, response: string }} IntentResult */
+
+const INTENT_MAP = [
+  {
+    intent: 'navigate',
+    screen: 'Market',
+    keys: ['mandi', 'price', 'market', 'bhav', 'भाव', 'मंडी', 'दाम', 'rate',
+           'bazaar', 'बाजार', 'बाज़ार', 'किस भाव', 'कितने में'],
+    say: 'Mandi bhav dikha rahi hoon.',
+  },
+  {
+    intent: 'navigate',
+    screen: 'Disease',
+    keys: ['disease', 'scan', 'camera', 'बीमारी', 'रोग', 'pest', 'कीड़',
+           'photo', 'diagnos', 'fungus'],
+    say: 'Camera khol rahi hoon. Fasal ki photo lo.',
+  },
+  {
+    intent: 'navigate',
+    screen: 'Schemes',
+    keys: ['scheme', 'yojana', 'योजना', 'government', 'सरकारी', 'subsidy',
+           'pradhan', 'प्रधान', 'PM Kisan', 'loan'],
+    say: 'Sarkari yojnayein dikha rahi hoon.',
+  },
+  {
+    intent: 'navigate',
+    screen: 'MainTabs',
+    keys: ['home', 'dashboard', 'होम', 'main page', 'ghar'],
+    say: 'Home page khol rahi hoon.',
+  },
+  {
+    intent: 'navigate',
+    screen: 'CropInput',
+    keys: ['crop input', 'new crop', 'add crop', 'enter crop', 'फसल दर्ज',
+           'crop detail'],
+    say: 'Crop details ka page khol rahi hoon.',
+  },
+  {
+    intent: 'navigate',
+    screen: 'Spoilage',
+    keys: ['spoilage', 'spoil', 'rot', 'खराब', 'सड़', 'storage risk',
+           'store', 'स्टोर', 'रखना'],
+    say: 'Storage risk check kar rahi hoon.',
+  },
+  {
+    intent: 'navigate',
+    screen: 'Alerts',
+    keys: ['alert', 'notification', 'अलर्ट', 'सूचना', 'चेतावनी'],
+    say: 'Aapke alerts dikha rahi hoon.',
+  },
+  {
+    intent: 'navigate',
+    screen: 'ARIA',
+    keys: ['chat with aria', 'aria se baat', 'aria chat', 'text aria',
+           'aria type'],
+    say: 'ARIA chat khol rahi hoon.',
+  },
+  {
+    intent: 'fetch',
+    action: 'price_forecast',
+    keys: ['price forecast', 'price tomorrow', 'price prediction', 'कल का भाव',
+           'भाव बताओ', 'rate batao', 'rate kya hai', 'kitne mein bikega'],
+    say: 'Bhav ka estimate nikal rahi hoon...',
+  },
+  {
+    intent: 'fetch',
+    action: 'harvest',
+    keys: ['harvest', 'कटाई', 'काट', 'when to cut', 'कब काटूं', 'कब तोड़ूं',
+           'ready to harvest', 'todhna'],
+    say: 'Katai ka sahi samay bata rahi hoon...',
+  },
+  {
+    intent: 'fetch',
+    action: 'weather',
+    keys: ['weather', 'rain', 'मौसम', 'बारिश', 'temperature', 'तापमान',
+           'बादल', 'धूप', 'garmi', 'hava'],
+    say: 'Mausam ki jankari la rahi hoon...',
+  },
+  {
+    intent: 'fetch',
+    action: 'best_mandi',
+    keys: ['best mandi', 'which mandi', 'कौन सा मंडी', 'कहाँ बेचूं',
+           'कहां बेचूं', 'किधर बेचूं', 'sabse accha mandi'],
+    say: 'Sabse acchi mandi dhundh rahi hoon...',
+  },
+  {
+    intent: 'fetch',
+    action: 'full_advisory',
+    keys: ['full advice', 'pura advice', 'sab batao', 'poori salah',
+           'recommendation', 'suggest', 'kya karu', 'सलाह', 'क्या करूं'],
+    say: 'Aapke liye poori salah tayyar kar rahi hoon...',
+  },
+  {
+    intent: 'stop',
+    keys: ['stop', 'close', 'cancel', 'bye', 'बंद', 'रुक', 'बस', 'bass',
+           'thankyou', 'shukriya', 'alvida'],
+    say: 'Theek hai, zarurat pade toh bolo.',
+  },
+];
+
+/**
+ * Try fast local keyword matching.  Returns null if no match.
+ * @param {string} text
+ * @returns {IntentResult|null}
+ */
+const matchLocal = (text) => {
+  const lower = text.toLowerCase();
+  for (const entry of INTENT_MAP) {
+    for (const kw of entry.keys) {
+      if (lower.includes(kw.toLowerCase())) {
+        return {
+          intent: entry.intent,
+          screen: entry.screen,
+          action: entry.action,
+          params: {},
+          response: entry.say,
+        };
+      }
+    }
+  }
+  return null;
+};
+
+/**
+ * Use Gemini to understand complex / multilingual commands.
+ */
+const parseWithGemini = async (transcript, ctx) => {
+  const prompt = `You are ARIA, a voice assistant for Indian farmers. Parse this voice command.
+
+Farmer said: "${transcript}"
+Context: Crop=${ctx.crop || 'Unknown'}, District=${ctx.district || 'Unknown'}
+
+Available actions:
+1. navigate:Market - Show mandi/market prices
+2. navigate:Disease - Open camera for disease scanning
+3. navigate:Schemes - Government schemes
+4. navigate:MainTabs - Home dashboard
+5. navigate:CropInput - Enter crop details
+6. navigate:Spoilage - Storage/spoilage risk
+7. navigate:Alerts - Notifications
+8. navigate:ARIA - Chat screen
+9. fetch:price_forecast - Price prediction
+10. fetch:harvest - Harvest timing advice
+11. fetch:weather - Weather info
+12. fetch:best_mandi - Best mandi to sell at
+13. fetch:full_advisory - Complete farm advisory
+14. stop - Close assistant
+15. chat - General farming question
+
+Return ONLY valid JSON (no markdown fences):
+{"intent":"navigate|fetch|stop|chat","action":"screen or fetch_type","params":{},"response":"Short reply in Hindi/Hinglish, max 2 sentences, end with clear action: Aaj hi becho / Kal tak ruko / Doctor ko dikhao etc."}`;
+
+  const res = await fetch(`${GEMINI_URL}?key=${GOOGLE_API_KEY}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      contents: [{ parts: [{ text: prompt }] }],
+      generationConfig: { temperature: 0.1, maxOutputTokens: 300 },
+    }),
+  });
+
+  if (!res.ok) throw new Error(`Gemini NLU failed (${res.status})`);
+
+  const data = await res.json();
+  let raw = (data?.candidates?.[0]?.content?.parts?.[0]?.text || '').trim();
+  raw = raw.replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/, '').trim();
+
+  try {
+    const obj = JSON.parse(raw);
+    return {
+      intent: obj.intent || 'chat',
+      screen: obj.intent === 'navigate' ? obj.action : undefined,
+      action: obj.intent === 'fetch' ? obj.action : undefined,
+      params: obj.params || {},
+      response: obj.response || 'Samajh gayi, kaam kar rahi hoon.',
+    };
+  } catch {
+    // Gemini returned free-form text – treat as chat reply
+    return { intent: 'chat', response: raw || 'Samajh nahi aaya, phir bolo.' };
+  }
+};
+
+/**
+ * Parse a voice command into a structured intent.
+ * First tries instant local keyword matching, then Gemini NLU.
+ *
+ * @param {string} transcript
+ * @param {object} ctx  { crop, district }
+ * @returns {Promise<IntentResult>}
+ */
+export const parseIntent = async (transcript, ctx = {}) => {
+  if (!transcript) {
+    return { intent: 'unknown', response: 'Kuch samajh nahi aaya, ek baar phir bolo.' };
+  }
+
+  const local = matchLocal(transcript);
+  if (local) return local;
+
+  try {
+    return await parseWithGemini(transcript, ctx);
+  } catch (err) {
+    console.warn('Gemini NLU error:', err.message);
+    return { intent: 'chat', response: 'Network slow hai, thoda baad mein try karo.' };
+  }
+};
+
+/* ─────────────────────────────────────────────────────────────────────────────
+ * Text-to-Speech
+ * ───────────────────────────────────────────────────────────────────────────── */
+
+const SPEECH_CODES = { hi: 'hi-IN', en: 'en-IN', mr: 'mr-IN' };
+
+/**
+ * Speak text out loud. Returns a promise that resolves when speech finishes.
+ */
+export const speak = (text, lang = 'hi') =>
+  new Promise((resolve) => {
+    Speech.speak(text, {
+      language: SPEECH_CODES[lang] || 'hi-IN',
+      rate: 0.95,
+      pitch: 1.0,
+      onDone: resolve,
+      onStopped: resolve,
+      onError: resolve,
+    });
+  });
+
+/**
+ * Stop any ongoing speech.
+ */
+export const stopSpeaking = () => Speech.stop();

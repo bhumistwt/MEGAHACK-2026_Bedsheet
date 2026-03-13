@@ -16,15 +16,23 @@ class Settings(BaseSettings):
     api_host: str = Field(default='0.0.0.0', alias='API_HOST')
     api_port: int = Field(default=8000, alias='API_PORT')
     database_url: str = Field(default='sqlite:///./khetwala.db', alias='DATABASE_URL')
-    secret_key: str = Field(default='change-this-in-production', alias='SECRET_KEY')
+    secret_key: str = Field(default='', alias='SECRET_KEY')
     data_gov_api_key: str = Field(default='', alias='DATA_GOV_API_KEY')
     data_gov_base_url: str = Field(default='https://api.data.gov.in', alias='DATA_GOV_BASE_URL')
     data_gov_resource_id: str = Field(default='9ef84268-d588-465a-a308-a864a43d0070', alias='DATA_GOV_RESOURCE_ID')
     google_api_key: str = Field(default='', alias='GOOGLE_API_KEY')
+    twilio_account_sid: str = Field(default='', alias='TWILIO_ACCOUNT_SID')
+    twilio_auth_token: str = Field(default='', alias='TWILIO_AUTH_TOKEN')
+    twilio_phone_number: str = Field(default='', alias='TWILIO_PHONE_NUMBER')
+    voice_agent_public_base_url: str = Field(default='http://127.0.0.1:8000', alias='VOICE_AGENT_PUBLIC_BASE_URL')
+    voice_agent_internal_api_base_url: str = Field(default='', alias='VOICE_AGENT_INTERNAL_API_BASE_URL')
+    voice_agent_feature_timeout_seconds: int = Field(default=12, alias='VOICE_AGENT_FEATURE_TIMEOUT_SECONDS')
+    voice_agent_human_operator_number: str = Field(default='', alias='VOICE_AGENT_HUMAN_OPERATOR_NUMBER')
+    voice_agent_max_silence_retries: int = Field(default=2, alias='VOICE_AGENT_MAX_SILENCE_RETRIES')
     etl_enabled: bool = Field(default=True, alias='ETL_ENABLED')
     log_level: str = Field(default='INFO', alias='LOG_LEVEL')
     log_json_format: bool = Field(default=False, alias='LOG_JSON_FORMAT')
-    cors_origins: str = Field(default='*', alias='CORS_ORIGINS')
+    cors_origins: str = Field(default='http://localhost:8081,http://127.0.0.1:8081', alias='CORS_ORIGINS')
 
     @property
     def is_development(self) -> bool:
@@ -37,8 +45,10 @@ class Settings(BaseSettings):
     @property
     def cors_origins_list(self) -> list[str]:
         raw = (self.cors_origins or '*').strip()
-        if raw == '*':
+        if raw == '*' and not self.is_production:
             return ['*']
+        if raw == '*':
+            return []
         return [origin.strip() for origin in raw.split(',') if origin.strip()]
 
     @property
@@ -51,6 +61,7 @@ class Settings(BaseSettings):
             'weather': 'active',
             'predict': 'active',
             'aria': 'active' if self.google_api_key else 'fallback',
+            'voice_agent': 'active' if self.google_api_key else 'fallback',
         }
 
 

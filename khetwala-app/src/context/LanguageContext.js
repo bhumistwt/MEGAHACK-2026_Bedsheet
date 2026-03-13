@@ -3,7 +3,7 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  *
  * Provides:
- * - `language` — current lang code ('en' | 'hi' | 'mr')
+ * - `language` — current lang code ('en' | 'hi' | 'mr' | 'gu' | 'kn')
  * - `setLanguage(code)` — switch language (persists to AsyncStorage)
  * - `t(key, params)` — shortcut for translate(key, params, language)
  */
@@ -14,6 +14,7 @@ import { translate, LANGUAGES } from '../i18n';
 
 const STORAGE_KEY = '@khetwala_language';
 const DEFAULT_LANG = 'hi';
+const VALID_LANGUAGES = ['en', 'hi', 'mr', 'gu', 'kn'];
 
 const LanguageContext = createContext(null);
 
@@ -34,7 +35,7 @@ export function LanguageProvider({ children }) {
     (async () => {
       try {
         const saved = await AsyncStorage.getItem(STORAGE_KEY);
-        if (saved && ['en', 'hi', 'mr', 'gu'].includes(saved)) {
+        if (saved && VALID_LANGUAGES.includes(saved)) {
           setLangState(saved);
         }
       } catch {
@@ -45,7 +46,7 @@ export function LanguageProvider({ children }) {
   }, []);
 
   const setLanguage = useCallback(async (code) => {
-    if (!['en', 'hi', 'mr', 'gu'].includes(code)) return;
+    if (!VALID_LANGUAGES.includes(code)) return;
     setLangState(code);
     try {
       await AsyncStorage.setItem(STORAGE_KEY, code);

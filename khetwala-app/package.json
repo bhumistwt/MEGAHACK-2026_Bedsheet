@@ -7,24 +7,34 @@
     "start": "expo start",
     "android": "expo run:android",
     "ios": "expo run:ios",
-    "web": "expo start --web"
+    "web": "expo start --web",
+    "call:voice-agent": "node scripts/twilioCallVoiceAgent.js"
   },
   "dependencies": {
     "@react-native-async-storage/async-storage": "^2.2.0",
     "@react-native-community/datetimepicker": "8.6.0",
     "@react-native-community/netinfo": "11.5.2",
     "@react-native-community/slider": "5.1.2",
+    "@react-navigation/bottom-tabs": "^7.4.10",
     "@react-navigation/native": "^7.1.31",
     "@react-navigation/stack": "^7.8.2",
     "axios": "^1.13.5",
     "expo": "~55.0.2",
-    "expo-location": "~19.0.7",
+    "expo-av": "~16.0.8",
+    "expo-camera": "~55.0.9",
+    "expo-constants": "~55.0.7",
+    "expo-file-system": "~55.0.10",
+    "expo-image-picker": "~55.0.12",
     "expo-linear-gradient": "~55.0.8",
+    "expo-location": "~55.1.2",
+    "expo-notifications": "~55.0.12",
+    "expo-speech": "~55.0.8",
     "react": "19.2.0",
     "react-native": "0.83.2",
     "react-native-paper": "^5.15.0",
     "react-native-safe-area-context": "5.6.2",
     "react-native-screens": "~4.16.0",
-    "react-native-svg": "15.15.3"
+    "react-native-svg": "15.15.3",
+    "twilio": "^5.13.0"
   }
 }

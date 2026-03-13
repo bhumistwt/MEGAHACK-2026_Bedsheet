@@ -11,11 +11,10 @@ import NetInfo from '@react-native-community/netinfo';
  * Now with NetInfo-based connectivity detection for accurate offline handling.
  */
 
-// Base URL configuration - use environment variable or default to LAN IP
-// For development: Set EXPO_PUBLIC_BACKEND_URL in your .env file
-// For production: Set to your deployed API URL
-// NOTE: localhost won't work on physical devices — use your computer's LAN IP
-const BASE_URL = process.env.EXPO_PUBLIC_BACKEND_URL || 'http://10.210.22.76:8000';
+// Base URL configuration - use environment variable or default to localhost
+// For USB debugging: Use 'http://localhost:8000' with `adb reverse tcp:8000 tcp:8000`
+// For WiFi: Set EXPO_PUBLIC_BACKEND_URL to your computer's LAN IP
+const BASE_URL = process.env.EXPO_PUBLIC_BACKEND_URL || 'http://localhost:8000';
 
 // Cache configuration
 const CACHE_PREFIX = 'khetwala_api_cache_v1';
