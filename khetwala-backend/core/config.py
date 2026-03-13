@@ -20,6 +20,38 @@ class Settings(BaseSettings):
     data_gov_api_key: str = Field(default='', alias='DATA_GOV_API_KEY')
     data_gov_base_url: str = Field(default='https://api.data.gov.in', alias='DATA_GOV_BASE_URL')
     data_gov_resource_id: str = Field(default='9ef84268-d588-465a-a308-a864a43d0070', alias='DATA_GOV_RESOURCE_ID')
+    google_api_key: str = Field(default='', alias='GOOGLE_API_KEY')
+    etl_enabled: bool = Field(default=True, alias='ETL_ENABLED')
+    log_level: str = Field(default='INFO', alias='LOG_LEVEL')
+    log_json_format: bool = Field(default=False, alias='LOG_JSON_FORMAT')
+    cors_origins: str = Field(default='*', alias='CORS_ORIGINS')
+
+    @property
+    def is_development(self) -> bool:
+        return self.environment.lower() == 'development'
+
+    @property
+    def is_production(self) -> bool:
+        return self.environment.lower() == 'production'
+
+    @property
+    def cors_origins_list(self) -> list[str]:
+        raw = (self.cors_origins or '*').strip()
+        if raw == '*':
+            return ['*']
+        return [origin.strip() for origin in raw.split(',') if origin.strip()]
+
+    @property
+    def datagov_api_key(self) -> str:
+        return self.data_gov_api_key
+
+    def get_api_status(self) -> dict[str, str]:
+        return {
+            'market': 'active' if self.data_gov_api_key else 'fallback',
+            'weather': 'active',
+            'predict': 'active',
+            'aria': 'active' if self.google_api_key else 'fallback',
+        }
 
 
 @lru_cache()

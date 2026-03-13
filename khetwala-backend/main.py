@@ -26,7 +26,27 @@ from core.middleware import setup_middleware
 from routers.predict import router as predict_router
 from routers.weather import router as weather_router
 from routers.market import router as market_router
+from routers.disease import router as disease_router
+from routers.schemes import router as schemes_router
+from routers.intelligence import router as intelligence_router
 from routers.auth import router as auth_router
+from routers.aria import router as aria_router
+from routers.aria_memory import router as aria_memory_router
+from routers.aria_agent import router as aria_agent_router
+from routers.digital_twin import router as digital_twin_router
+from routers.harvest_cycles import router as harvest_cycles_router
+from routers.simulator import router as simulator_router
+from routers.community import router as community_router
+from routers.diary import router as diary_router
+from routers.credit_score import router as credit_score_router
+from routers.marketplace import router as marketplace_router
+from routers.policy_risk import router as policy_risk_router
+from routers.b2b import router as b2b_router
+from routers.sms import router as sms_router
+from routers.iot import router as iot_router
+from routers.photo_diagnostic import router as photo_diagnostic_router
+from routers.soil_health import router as soil_health_router
+from routers.blockchain import router as blockchain_router
 
 # Database & ETL
 from db.session import init_db
@@ -149,9 +169,29 @@ def create_app() -> FastAPI:
     api_prefix = "/api/v1" if settings.is_production else ""
 
     app.include_router(auth_router, prefix=api_prefix)
+    app.include_router(aria_router, prefix=api_prefix)
+    app.include_router(aria_memory_router, prefix=api_prefix)
+    app.include_router(aria_agent_router, prefix=api_prefix)
     app.include_router(predict_router, prefix=api_prefix)
+    app.include_router(intelligence_router, prefix=api_prefix)
     app.include_router(weather_router, prefix=api_prefix)
     app.include_router(market_router, prefix=api_prefix)
+    app.include_router(disease_router, prefix=api_prefix)
+    app.include_router(schemes_router, prefix=api_prefix)
+    app.include_router(digital_twin_router, prefix=api_prefix)
+    app.include_router(harvest_cycles_router, prefix=api_prefix)
+    app.include_router(simulator_router, prefix=api_prefix)
+    app.include_router(community_router, prefix=api_prefix)
+    app.include_router(diary_router, prefix=api_prefix)
+    app.include_router(credit_score_router, prefix=api_prefix)
+    app.include_router(marketplace_router, prefix=api_prefix)
+    app.include_router(policy_risk_router, prefix=api_prefix)
+    app.include_router(b2b_router, prefix=api_prefix)
+    app.include_router(sms_router, prefix=api_prefix)
+    app.include_router(iot_router, prefix=api_prefix)
+    app.include_router(photo_diagnostic_router, prefix=api_prefix)
+    app.include_router(soil_health_router, prefix=api_prefix)
+    app.include_router(blockchain_router, prefix=api_prefix)
 
     return app
 
