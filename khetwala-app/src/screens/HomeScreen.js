@@ -39,7 +39,7 @@ const ACTION_CARDS = [
   },
 ];
 
-export default function HomeScreen() {
+export default function HomeScreen({ navigation }) {
   const { user, logout } = useAuth();
   const district = user?.district || 'Not set';
 
@@ -69,11 +69,16 @@ export default function HomeScreen() {
 
         <View style={styles.grid}>
           {ACTION_CARDS.map((card) => (
-            <View key={card.title} style={styles.actionCard}>
+            <TouchableOpacity
+              key={card.title}
+              style={styles.actionCard}
+              onPress={card.title === 'Farmer Profile' ? () => navigation.navigate('Profile') : undefined}
+              activeOpacity={card.title === 'Farmer Profile' ? 0.7 : 1}
+            >
               <View style={[styles.cardAccent, { backgroundColor: card.bg }]} />
               <Text style={[styles.cardTitle, { color: card.color }]}>{card.title}</Text>
               <Text style={styles.cardSubtitle}>{card.subtitle}</Text>
-            </View>
+            </TouchableOpacity>
           ))}
         </View>
 
