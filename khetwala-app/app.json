@@ -4,6 +4,9 @@
     "slug": "khetwala",
     "version": "0.1.0",
     "orientation": "portrait",
-    "userInterfaceStyle": "light"
+    "userInterfaceStyle": "light",
+    "android": {
+      "package": "com.pandeyashwin0.khetwala"
+    }
   }
 }
