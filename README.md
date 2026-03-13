@@ -1,10 +1,9 @@
 # Khetwala
 
-Minimal hackathon starter for a farmer-assistant app.
+Khetwala is a platform focused on building digital tools that help farmers with access to information, resources, and decision support.
+This repository currently contains the mobile application and backend foundation.
 
-## Initial Structure
+## Project Structure
 
-- `khetwala-app/` – React Native (Expo) starter
-- `khetwala-backend/` – FastAPI starter
-
-This is intentionally a basic setup commit. Features will be added in later commits.
+- `khetwala-app/` – Mobile application
+- `khetwala-backend/` – Backend services
