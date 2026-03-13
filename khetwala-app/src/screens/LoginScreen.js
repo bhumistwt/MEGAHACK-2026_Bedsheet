@@ -15,7 +15,7 @@ import { useAuth } from '../context/AuthContext';
 import { COLORS } from '../theme/colors';
 
 export default function LoginScreen({ navigation }) {
-  const { login } = useAuth();
+  const { login, loginAsGuest } = useAuth();
   const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
@@ -32,6 +32,17 @@ export default function LoginScreen({ navigation }) {
     } catch (error) {
       const message = error?.response?.data?.detail || 'Unable to login.';
       Alert.alert('Login Failed', message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const onGuestLogin = async () => {
+    setLoading(true);
+    try {
+      await loginAsGuest();
+    } catch {
+      Alert.alert('Guest Login Failed', 'Unable to continue as guest.');
     } finally {
       setLoading(false);
     }
@@ -64,6 +75,10 @@ export default function LoginScreen({ navigation }) {
 
           <TouchableOpacity style={styles.button} onPress={onSubmit} disabled={loading}>
             {loading ? <ActivityIndicator color={COLORS.onPrimary} /> : <Text style={styles.buttonText}>Login</Text>}
+          </TouchableOpacity>
+
+          <TouchableOpacity style={styles.secondaryButton} onPress={onGuestLogin} disabled={loading}>
+            <Text style={styles.secondaryButtonText}>Continue as Guest</Text>
           </TouchableOpacity>
 
           <TouchableOpacity onPress={() => navigation.navigate('Register')}>
@@ -114,6 +129,19 @@ const styles = StyleSheet.create({
   },
   buttonText: {
     color: COLORS.onPrimary,
+    fontWeight: '600',
+  },
+  secondaryButton: {
+    borderWidth: 1,
+    borderColor: COLORS.primary,
+    borderRadius: 10,
+    paddingVertical: 12,
+    alignItems: 'center',
+    marginTop: 10,
+    backgroundColor: COLORS.surface,
+  },
+  secondaryButtonText: {
+    color: COLORS.primary,
     fontWeight: '600',
   },
   link: {

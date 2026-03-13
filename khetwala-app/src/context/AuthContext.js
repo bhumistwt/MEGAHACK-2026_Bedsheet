@@ -3,6 +3,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';
 
 const BASE_URL = process.env.EXPO_PUBLIC_BACKEND_URL || 'http://localhost:8000';
+const GUEST_TOKEN = '@guest_session';
 const TOKEN_KEY = '@khetwala_auth_token';
 const USER_KEY = '@khetwala_auth_user';
 
@@ -72,6 +73,20 @@ export function AuthProvider({ children }) {
     return data;
   };
 
+  const loginAsGuest = async () => {
+    const guestUser = {
+      id: 'guest',
+      phone: 'Guest Mode',
+      full_name: 'Guest User',
+      district: 'Nashik',
+      state: 'Maharashtra',
+      created_at: null,
+      is_guest: true,
+    };
+    await saveSession(GUEST_TOKEN, guestUser);
+    return { access_token: GUEST_TOKEN, user: guestUser };
+  };
+
   const logout = async () => {
     await clearSession();
   };
@@ -84,6 +99,7 @@ export function AuthProvider({ children }) {
       isAuthenticated: !!token && !!user,
       login,
       register,
+      loginAsGuest,
       logout,
     }),
     [user, token, loading]

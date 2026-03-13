@@ -1,6 +1,5 @@
 import React from 'react';
 import {
-  SafeAreaView,
   ScrollView,
   StatusBar,
   StyleSheet,
@@ -8,97 +7,98 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useAuth } from '../context/AuthContext';
-import WeatherBanner from '../components/WeatherBanner';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { COLORS, ELEVATION, RADIUS, SPACING, TYPOGRAPHY } from '../theme/colors';
+import WeatherBanner from '../components/WeatherBanner';
+import { useLanguage } from '../context/LanguageContext';
+import LanguageSwitcher from '../components/LanguageSwitcher';
+import { useAuth } from '../context/AuthContext';
 
 const ACTION_CARDS = [
-  {
-    title: 'Harvest Planning',
-    subtitle: 'Track crop timing and readiness',
-    color: '#1B5E20',
-    bg: '#E8F5E9',
-  },
-  {
-    title: 'Market Prices',
-    subtitle: 'Review mandi trends and rates',
-    color: '#0277BD',
-    bg: '#E1F5FE',
-  },
-  {
-    title: 'Storage Risk',
-    subtitle: 'Check basic post-harvest handling',
-    color: '#E65100',
-    bg: '#FFF3E0',
-  },
-  {
-    title: 'Farmer Profile',
-    subtitle: 'Manage district and crop details',
-    color: '#6A1B9A',
-    bg: '#F3E5F5',
-  },
+  { icon: 'calendar-check',     color: '#1B5E20', bg: '#E8F5E9', titleKey: 'home.harvestAdvisor', subtitleKey: 'home.harvestAdvisorSub', route: 'CropInput' },
+  { icon: 'store',              color: '#0277BD', bg: '#E1F5FE', titleKey: 'home.bestMandi',      subtitleKey: 'home.bestMandiSub',      tab: 'Market' },
+  { icon: 'package-variant',    color: '#E65100', bg: '#FFF3E0', titleKey: 'home.spoilageRisk',   subtitleKey: 'home.spoilageRiskSub',   route: 'Spoilage' },
+  { icon: 'leaf-circle-outline',color: '#2E7D32', bg: '#F1F8E9', titleKey: 'home.diseaseScanner', subtitleKey: 'home.diseaseScannerSub', tab: 'Disease' },
+  { icon: 'bank',               color: '#4527A0', bg: '#EDE7F6', titleKey: 'home.govtSchemes',    subtitleKey: 'home.govtSchemesSub',    route: 'Schemes' },
+  { icon: 'bell-ring-outline',  color: '#C62828', bg: '#FFEBEE', titleKey: 'home.smartAlerts',    subtitleKey: 'home.smartAlertsSub',    route: 'Alerts' },
+  { icon: 'earth',              color: '#795548', bg: '#EFEBE9', titleKey: 'soilHealth.cardTitle', subtitleKey: 'soilHealth.cardSub',     route: 'SoilHealth' },
+  { icon: 'handshake',           color: '#1565C0', bg: '#E3F2FD', titleKey: 'deals.cardTitle',     subtitleKey: 'deals.cardSub',          route: 'Deals' },
 ];
 
 export default function HomeScreen({ navigation }) {
-  const { user, logout } = useAuth();
-  const district = user?.district || 'Not set';
+  const { t } = useLanguage();
+  const { user } = useAuth();
+  const district = user?.district || 'Nashik';
+
+  const handleCardPress = (card) => {
+    if (card.route) navigation.navigate(card.route);
+    else if (card.tab) navigation.navigate(card.tab);
+  };
+
+  const greeting = () => {
+    const h = new Date().getHours();
+    if (h < 12) return t('home.greeting');
+    if (h < 17) return t('home.greeting');
+    return t('home.greeting');
+  };
 
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <SafeAreaView style={styles.safeArea} edges={['top']}>
       <StatusBar barStyle="light-content" backgroundColor={COLORS.primary} />
 
+      {/* ── Header ─────────────────────────────────────────────────── */}
       <LinearGradient
         colors={[COLORS.primary, '#2E7D32']}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
         style={styles.header}
       >
-        <Text style={styles.brandLabel}>Khetwala</Text>
-        <Text style={styles.brandSub}>
-          {user?.full_name ? `${user.full_name} • ${district}` : district}
-        </Text>
+        <View style={styles.topBar}>
+          <View>
+            <Text style={styles.brandLabel}>{t('common.appName')}</Text>
+            <Text style={styles.brandSub}>
+              {user?.full_name ? `${user.full_name} • ${district}` : district}
+            </Text>
+          </View>
+          <LanguageSwitcher compact />
+        </View>
       </LinearGradient>
 
-      <ScrollView contentContainerStyle={styles.contentContainer}>
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={styles.contentContainer}
+      >
+        {/* ── Weather ─────────────────────────────────────────────── */}
         <WeatherBanner
-          district={district === 'Not set' ? 'Nashik' : district}
-          onPress={() => navigation.navigate('Market')}
+          district={district}
+          onPress={() => navigation.navigate('Alerts')}
         />
 
+        {/* ── Greeting Card ───────────────────────────────────────── */}
         <View style={styles.greetingCard}>
-          <Text style={styles.greetingTitle}>Welcome back</Text>
-          <Text style={styles.greetingSubtitle}>
-            Your farm workspace is ready with the main tools in one place.
-          </Text>
+          <Text style={styles.greetingTitle}>{greeting()}</Text>
+          <Text style={styles.greetingSubtitle}>{t('home.subtitle')}</Text>
         </View>
 
+        {/* ── Action Grid ─────────────────────────────────────────── */}
         <View style={styles.grid}>
           {ACTION_CARDS.map((card) => (
             <TouchableOpacity
-              key={card.title}
+              key={card.titleKey}
               style={styles.actionCard}
-              onPress={
-                card.title === 'Farmer Profile'
-                  ? () => navigation.navigate('Profile')
-                  : card.title === 'Market Prices'
-                    ? () => navigation.navigate('Market')
-                    : undefined
-              }
-              activeOpacity={
-                card.title === 'Farmer Profile' || card.title === 'Market Prices' ? 0.7 : 1
-              }
+              activeOpacity={0.7}
+              onPress={() => handleCardPress(card)}
             >
-              <View style={[styles.cardAccent, { backgroundColor: card.bg }]} />
-              <Text style={[styles.cardTitle, { color: card.color }]}>{card.title}</Text>
-              <Text style={styles.cardSubtitle}>{card.subtitle}</Text>
+              <View style={[styles.cardIconWrap, { backgroundColor: card.bg }]}>
+                <MaterialCommunityIcons name={card.icon} size={28} color={card.color} />
+              </View>
+              <Text style={styles.cardTitle} numberOfLines={1}>{t(card.titleKey)}</Text>
+              <Text style={styles.cardSubtitle} numberOfLines={2}>{t(card.subtitleKey)}</Text>
             </TouchableOpacity>
           ))}
         </View>
-
-        <TouchableOpacity style={styles.button} onPress={logout}>
-          <Text style={styles.buttonText}>Logout</Text>
-        </TouchableOpacity>
       </ScrollView>
     </SafeAreaView>
   );
@@ -114,6 +114,11 @@ const styles = StyleSheet.create({
     paddingTop: SPACING.md,
     paddingBottom: SPACING.lg,
   },
+  topBar: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
   brandLabel: {
     ...TYPOGRAPHY.titleLarge,
     color: COLORS.onPrimary,
@@ -121,7 +126,7 @@ const styles = StyleSheet.create({
   },
   brandSub: {
     ...TYPOGRAPHY.bodySmall,
-    color: 'rgba(255,255,255,0.78)',
+    color: 'rgba(255,255,255,0.75)',
     marginTop: 2,
   },
   contentContainer: {
@@ -130,7 +135,7 @@ const styles = StyleSheet.create({
     borderTopRightRadius: RADIUS.xl,
     paddingHorizontal: SPACING.md,
     paddingTop: SPACING.lg,
-    paddingBottom: 80,
+    paddingBottom: 100,
     minHeight: '100%',
   },
   greetingCard: {
@@ -164,30 +169,22 @@ const styles = StyleSheet.create({
     padding: SPACING.md,
     ...ELEVATION.level1,
   },
-  cardAccent: {
-    width: 44,
-    height: 44,
+  cardIconWrap: {
+    width: 48,
+    height: 48,
     borderRadius: RADIUS.md,
+    justifyContent: 'center',
+    alignItems: 'center',
     marginBottom: SPACING.sm,
   },
   cardTitle: {
     ...TYPOGRAPHY.titleSmall,
+    color: COLORS.onSurface,
     fontWeight: '700',
   },
   cardSubtitle: {
     ...TYPOGRAPHY.bodySmall,
     color: COLORS.onSurfaceVariant,
     marginTop: 2,
-  },
-  button: {
-    marginTop: SPACING.xl,
-    backgroundColor: COLORS.primary,
-    borderRadius: RADIUS.md,
-    paddingVertical: 12,
-    alignItems: 'center',
-  },
-  buttonText: {
-    color: COLORS.onPrimary,
-    fontWeight: '600',
   },
 });

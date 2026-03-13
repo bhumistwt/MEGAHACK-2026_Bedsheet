@@ -4,13 +4,17 @@ from typing import Any, Dict, List
 
 import requests
 from cachetools import TTLCache
+from dotenv import load_dotenv
+
+load_dotenv()
 
 OPENWEATHER_5DAY_URL = "https://api.openweathermap.org/data/2.5/forecast"
+# Open-Meteo — free, no API key required
 OPEN_METEO_FORECAST_URL = "https://api.open-meteo.com/v1/forecast"
 OPEN_METEO_CURRENT_URL = "https://api.open-meteo.com/v1/forecast"
 
 WEATHER_CACHE = TTLCache(maxsize=256, ttl=6 * 60 * 60)
-CURRENT_WEATHER_CACHE = TTLCache(maxsize=256, ttl=30 * 60)
+CURRENT_WEATHER_CACHE = TTLCache(maxsize=256, ttl=30 * 60)  # 30 min for current
 
 DISTRICT_COORDINATES = {
     "nashik": {"lat": 20.011, "lon": 73.79},
@@ -79,8 +83,8 @@ def _parse_weather_features(payload: Dict[str, Any]) -> Dict[str, Any]:
     cutoff_3d = now + timedelta(days=3)
     cutoff_7d = now + timedelta(days=7)
 
-    temp_min = 10000.0
-    temp_max = -10000.0
+    temp_min = 10_000.0
+    temp_max = -10_000.0
     humidities: List[float] = []
     temps: List[float] = []
     rainfall_total = 0.0
@@ -88,7 +92,13 @@ def _parse_weather_features(payload: Dict[str, Any]) -> Dict[str, Any]:
     rainfall_7d = 0.0
     weather_alerts = set()
 
-    severe_terms = {"thunderstorm", "squall", "tornado", "heavy rain", "extreme"}
+    severe_terms = {
+        "thunderstorm",
+        "squall",
+        "tornado",
+        "heavy rain",
+        "extreme",
+    }
 
     for row in rows:
         dt_utc = datetime.fromtimestamp(int(row.get("dt", 0)), tz=timezone.utc)
@@ -119,9 +129,9 @@ def _parse_weather_features(payload: Dict[str, Any]) -> Dict[str, Any]:
                 if term in tag or term in description:
                     weather_alerts.add(term)
 
-    if temp_min == 10000.0:
+    if temp_min == 10_000.0:
         temp_min = 0.0
-    if temp_max == -10000.0:
+    if temp_max == -10_000.0:
         temp_max = 0.0
 
     humidity_index = sum(humidities) / max(1, len(humidities))
@@ -152,6 +162,7 @@ def _parse_weather_features(payload: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def _fetch_open_meteo_forecast(lat: float, lon: float) -> Dict[str, Any]:
+    """Fetch 7-day forecast from Open-Meteo (free, no API key)."""
     response = requests.get(
         OPEN_METEO_FORECAST_URL,
         params={
@@ -189,6 +200,7 @@ def _fetch_open_meteo_forecast(lat: float, lon: float) -> Dict[str, Any]:
     rain_in_3days = rainfall_3d >= 8.0
     rain_in_7days = rainfall_7d >= 14.0
 
+    # WMO weather codes: 95-99 = thunderstorm, 65-67 = heavy rain, 71-77 = snow
     weather_alerts = set()
     severe_codes = {95, 96, 99, 65, 66, 67, 75, 77}
     for code in wcodes:
@@ -227,6 +239,7 @@ def _fetch_open_meteo_forecast(lat: float, lon: float) -> Dict[str, Any]:
 
 
 def _fetch_open_meteo_current(lat: float, lon: float) -> Dict[str, Any]:
+    """Fetch current weather from Open-Meteo (free, no API key)."""
     response = requests.get(
         OPEN_METEO_CURRENT_URL,
         params={
@@ -247,13 +260,15 @@ def _fetch_open_meteo_current(lat: float, lon: float) -> Dict[str, Any]:
     humidities = [v for v in (hourly.get("relativehumidity_2m") or []) if v is not None]
     precip = [v for v in (hourly.get("precipitation") or []) if v is not None]
 
+    # Map WMO weather codes to human-readable descriptions
     wmo_descriptions = {
         0: "Clear sky", 1: "Mainly clear", 2: "Partly cloudy", 3: "Overcast",
-        45: "Fog", 48: "Depositing rime fog", 51: "Light drizzle", 53: "Moderate drizzle",
-        55: "Dense drizzle", 61: "Slight rain", 63: "Moderate rain", 65: "Heavy rain",
-        71: "Slight snow", 73: "Moderate snow", 75: "Heavy snow", 80: "Slight rain showers",
-        81: "Moderate rain showers", 82: "Violent rain showers", 95: "Thunderstorm",
-        96: "Thunderstorm with hail", 99: "Thunderstorm with heavy hail",
+        45: "Fog", 48: "Depositing rime fog",
+        51: "Light drizzle", 53: "Moderate drizzle", 55: "Dense drizzle",
+        61: "Slight rain", 63: "Moderate rain", 65: "Heavy rain",
+        71: "Slight snow", 73: "Moderate snow", 75: "Heavy snow",
+        80: "Slight rain showers", 81: "Moderate rain showers", 82: "Violent rain showers",
+        95: "Thunderstorm", 96: "Thunderstorm with hail", 99: "Thunderstorm with heavy hail",
     }
     wcode = current.get("weathercode", 0)
     description = wmo_descriptions.get(wcode, "Unknown")
@@ -273,6 +288,7 @@ def _fetch_open_meteo_current(lat: float, lon: float) -> Dict[str, Any]:
 
 
 def fetch_current_weather(district: str) -> Dict[str, Any]:
+    """Fetch real-time current weather for a district. Always succeeds."""
     cache_key = f"current::{district.lower()}"
     if cache_key in CURRENT_WEATHER_CACHE:
         return CURRENT_WEATHER_CACHE[cache_key]
@@ -280,13 +296,9 @@ def fetch_current_weather(district: str) -> Dict[str, Any]:
     coordinates = DISTRICT_COORDINATES.get(district.lower())
     if not coordinates:
         return {
-            "temp": 32.0,
-            "humidity": 60.0,
-            "rain_mm": 0.0,
-            "description": "Data unavailable",
-            "windspeed": 0.0,
-            "source": "fallback",
-            "district": district,
+            "temp": 32.0, "humidity": 60.0, "rain_mm": 0.0,
+            "description": "Data unavailable", "windspeed": 0.0,
+            "source": "fallback", "district": district,
         }
 
     try:
@@ -296,14 +308,9 @@ def fetch_current_weather(district: str) -> Dict[str, Any]:
         return result
     except Exception as exc:
         return {
-            "temp": 32.0,
-            "humidity": 60.0,
-            "rain_mm": 0.0,
-            "description": "Data unavailable",
-            "windspeed": 0.0,
-            "source": "fallback",
-            "error": str(exc),
-            "district": district,
+            "temp": 32.0, "humidity": 60.0, "rain_mm": 0.0,
+            "description": "Data unavailable", "windspeed": 0.0,
+            "source": "fallback", "error": str(exc), "district": district,
         }
 
 
@@ -321,13 +328,15 @@ def fetch_weather_features(district: str, state: str = "Maharashtra") -> Dict[st
         WEATHER_CACHE[cache_key] = features
         return features
 
+    # Primary: Open-Meteo (free, no API key required)
     try:
         parsed = _fetch_open_meteo_forecast(coordinates["lat"], coordinates["lon"])
         WEATHER_CACHE[cache_key] = parsed
         return parsed
     except Exception as meteo_exc:
-        pass
+        pass  # fall through to OpenWeatherMap
 
+    # Secondary: OpenWeatherMap (requires API key)
     api_key = os.getenv("OPENWEATHER_API_KEY") or os.getenv("EXPO_PUBLIC_OPENWEATHER_API_KEY")
     if api_key and api_key not in ("your_openweather_key", "your_openweathermap_api_key_here"):
         try:
@@ -348,6 +357,7 @@ def fetch_weather_features(district: str, state: str = "Maharashtra") -> Dict[st
         except Exception:
             pass
 
+    # Final fallback: climatology
     fallback = _fallback_weather_features(district=district, reason=str(meteo_exc))
     WEATHER_CACHE[cache_key] = fallback
     return fallback

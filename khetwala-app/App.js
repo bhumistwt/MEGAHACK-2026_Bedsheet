@@ -5,11 +5,15 @@ import { createStackNavigator } from '@react-navigation/stack';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { AuthProvider, useAuth } from './src/context/AuthContext';
+import { LanguageProvider } from './src/context/LanguageContext';
 import LoginScreen from './src/screens/LoginScreen';
 import RegisterScreen from './src/screens/RegisterScreen';
 import HomeScreen from './src/screens/HomeScreen';
 import ProfileScreen from './src/screens/ProfileScreen';
 import MarketScreen from './src/screens/MarketScreen';
+import CropInputScreen from './src/screens/CropInputScreen';
+import RecommendationScreen from './src/screens/RecommendationScreen';
+import SpoilageScreen from './src/screens/SpoilageScreen';
 import { COLORS } from './src/theme/colors';
 
 const Stack = createStackNavigator();
@@ -37,6 +41,9 @@ function RootNavigator() {
           <Stack.Screen name="Home" component={HomeScreen} />
           <Stack.Screen name="Profile" component={ProfileScreen} />
           <Stack.Screen name="Market" component={MarketScreen} />
+          <Stack.Screen name="CropInput" component={CropInputScreen} />
+          <Stack.Screen name="Recommendation" component={RecommendationScreen} />
+          <Stack.Screen name="Spoilage" component={SpoilageScreen} />
         </>
       )}
     </Stack.Navigator>
@@ -46,11 +53,13 @@ function RootNavigator() {
 export default function App() {
   return (
     <SafeAreaProvider>
-      <AuthProvider>
-        <NavigationContainer>
-          <RootNavigator />
-        </NavigationContainer>
-      </AuthProvider>
+      <LanguageProvider>
+        <AuthProvider>
+          <NavigationContainer>
+            <RootNavigator />
+          </NavigationContainer>
+        </AuthProvider>
+      </LanguageProvider>
     </SafeAreaProvider>
   );
 }
