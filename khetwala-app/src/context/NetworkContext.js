@@ -10,6 +10,7 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import NetInfo from '@react-native-community/netinfo';
 import { AppState } from 'react-native';
+import { getBackendBaseUrl } from '../config/backend';
 
 const NetworkContext = createContext(null);
 
@@ -18,7 +19,7 @@ const BACKEND_CHECK_INTERVAL_MS = 30_000;
 // Quick retry after connectivity change
 const BACKEND_QUICK_CHECK_MS = 2_000;
 
-const BASE_URL = process.env.EXPO_PUBLIC_BACKEND_URL || 'http://localhost:8000';
+const BASE_URL = getBackendBaseUrl();
 
 /**
  * NetworkProvider wraps the app and provides:

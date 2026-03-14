@@ -34,14 +34,10 @@ from core.config import settings
 from core.logging import get_logger
 from db.models import User, VoiceCallLog, VoiceCallTurnLog
 from db.session import get_db
+from services.llm_service import active_text_provider, chat_completion
 
 logger = get_logger("khetwala.routers.voice_agent")
 router = APIRouter(prefix="/voice-agent", tags=["voice-agent"])
-
-GEMINI_URL = (
-    "https://generativelanguage.googleapis.com/v1beta/models/"
-    "gemini-2.5-flash:generateContent"
-)
 
 MAX_AGENT_TURNS = 5
 
@@ -520,59 +516,29 @@ def _voice_system_prompt(lang: str, user: Optional[User]) -> str:
 def _build_gemini_conversation(messages: List[Dict[str, str]]) -> list:
     conversation = []
     for item in messages[-12:]:
-        role = "user" if item.get("role") == "user" else "model"
-        conversation.append({"role": role, "parts": [{"text": item.get("text", "")} ]})
+        role = 'assistant' if item.get('role') == 'assistant' else 'user'
+        conversation.append({'role': role, 'content': item.get('text', '')})
     if not conversation:
-        conversation.append({"role": "user", "parts": [{"text": "start"}]})
+        conversation.append({'role': 'user', 'content': 'start'})
     return conversation
 
 
 async def _call_gemini(system_prompt: str, contents: list) -> dict:
-    if not settings.google_api_key:
-        raise HTTPException(status_code=503, detail="GOOGLE_API_KEY missing for voice agent")
-
-    body = {
-        "system_instruction": {"parts": [{"text": system_prompt}]},
-        "contents": contents,
-        "tools": [{"function_declarations": TOOL_DECLARATIONS}],
-        "tool_config": {"function_calling_config": {"mode": "AUTO"}},
-        "generationConfig": {
-            "temperature": 0.25,
-            "maxOutputTokens": 700,
-        },
-    }
-
-    async with httpx.AsyncClient(timeout=25.0) as client:
-        resp = await client.post(
-            GEMINI_URL,
-            json=body,
-            headers={
-                "Content-Type": "application/json",
-                "x-goog-api-key": settings.google_api_key,
-            },
-        )
-
-    if resp.status_code != 200:
-        logger.error("Voice Gemini API error", status=resp.status_code, body=resp.text[:500])
-        raise HTTPException(status_code=502, detail=f"Gemini returned {resp.status_code}")
-
-    return resp.json()
+    return await chat_completion(
+        system_prompt=system_prompt,
+        messages=contents,
+        tools=TOOL_DECLARATIONS,
+        temperature=0.25,
+        max_output_tokens=700,
+    )
 
 
 def _extract_function_calls(candidate: dict) -> list:
-    parts = candidate.get("content", {}).get("parts", [])
-    calls = []
-    for part in parts:
-        fc = part.get("functionCall")
-        if fc:
-            calls.append({"name": fc.get("name"), "args": fc.get("args", {})})
-    return calls
+    return candidate.get('tool_calls', [])
 
 
 def _extract_text(candidate: dict) -> str:
-    parts = candidate.get("content", {}).get("parts", [])
-    lines = [p.get("text", "") for p in parts if "text" in p]
-    return "\n".join(lines).strip()
+    return (candidate.get('content') or '').strip()
 
 
 def _find_endpoint_key_by_path(path: str, method: str = "GET") -> Optional[str]:
@@ -799,7 +765,7 @@ async def _run_voice_agent_turn(
     language_code: str,
     db: Session,
 ) -> Dict[str, Any]:
-    if not settings.google_api_key:
+    if not active_text_provider():
         return await _run_voice_agent_without_llm(
             user_query=user_query,
             user=user,
@@ -813,10 +779,12 @@ async def _run_voice_agent_turn(
     final_reply = ""
     escalate_reason: Optional[str] = None
     last_feature_key: Optional[str] = None
+    source_provider = active_text_provider() or 'llm'
 
     for _ in range(MAX_AGENT_TURNS):
         try:
             gemini_resp = await _call_gemini(system_prompt, contents)
+            source_provider = gemini_resp.get('provider', source_provider)
         except HTTPException as exc:
             logger.warning(
                 "Voice Gemini unavailable, switching to local fallback",
@@ -839,21 +807,30 @@ async def _run_voice_agent_turn(
             fallback_result["actions"] = fallback_actions
             return fallback_result
 
-        candidates = gemini_resp.get("candidates", [])
-        if not candidates:
-            break
-
-        candidate = candidates[0]
-        fn_calls = _extract_function_calls(candidate)
+        fn_calls = _extract_function_calls(gemini_resp)
 
         if not fn_calls:
-            final_reply = _extract_text(candidate)
+            final_reply = _extract_text(gemini_resp)
             break
 
-        tool_results = []
+        contents.append(
+            {
+                'role': 'assistant',
+                'content': gemini_resp.get('content', ''),
+                'tool_calls': [
+                    {
+                        'id': call.get('id'),
+                        'name': call.get('name'),
+                        'arguments': call.get('arguments', {}),
+                    }
+                    for call in fn_calls
+                ],
+            }
+        )
+
         for call in fn_calls:
-            name = call.get("name")
-            args = call.get("args") or {}
+            name = call.get('name')
+            args = call.get('arguments') or {}
 
             if name == "call_feature_api":
                 if user and "user_id" in json.dumps(args):
@@ -873,18 +850,14 @@ async def _run_voice_agent_turn(
                 result = {"ok": False, "error": f"Unknown tool: {name}"}
 
             actions.append({"tool": name, "args": args, "result": result})
-            tool_results.append({"name": name, "response": result})
-
-        contents.append(candidate.get("content", {}))
-        contents.append(
-            {
-                "role": "user",
-                "parts": [
-                    {"functionResponse": {"name": tr["name"], "response": tr["response"]}}
-                    for tr in tool_results
-                ],
-            }
-        )
+            contents.append(
+                {
+                    'role': 'tool',
+                    'tool_call_id': call.get('id'),
+                    'name': name,
+                    'content': json.dumps(result, ensure_ascii=False),
+                }
+            )
 
         if escalate_reason:
             break

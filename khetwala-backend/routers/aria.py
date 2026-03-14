@@ -2,26 +2,23 @@
 Khetwala-मित्र ARIA Chat Router
 ═══════════════════════════════════════════════════════════════════════════════
 
-Proxies chat requests to Google Gemini API for the ARIA voice assistant.
-This ensures the API key is securely used server-side and avoids
-client-side env-variable loading issues in Expo Go.
+Provides backend ARIA chat and transcription using the configured LLM provider.
+This keeps API keys server-side and avoids frontend key requirements.
 """
 
-from typing import Any, Dict, List, Optional
+import base64
+import binascii
+from typing import Any, Dict, List
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
-from core.config import settings
 from core.logging import get_logger
-
-import httpx
+from services.llm_service import chat_completion, transcribe_audio
 
 logger = get_logger("khetwala.routers.aria")
 
 router = APIRouter(prefix="/aria", tags=["aria"])
-
-GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent"
 
 LANGUAGE_LABELS = {
     "hi": "Hindi",
@@ -59,8 +56,21 @@ class AriaChatRequest(BaseModel):
 
 class AriaChatResponse(BaseModel):
     reply: str
-    source: str = "gemini"
+    source: str = "llm"
     language_code: str = "en"
+
+
+class AriaTranscriptionRequest(BaseModel):
+    audio_base64: str
+    mime_type: str = Field(default='audio/mp4')
+    language_code: str = Field(default='hi', examples=['hi', 'en', 'mr', 'kn', 'gu'])
+    file_name: str = Field(default='aria-input.m4a')
+
+
+class AriaTranscriptionResponse(BaseModel):
+    transcript: str
+    source: str = 'groq'
+    language_code: str = 'en'
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -185,75 +195,64 @@ async def aria_chat(payload: AriaChatRequest) -> Dict[str, Any]:
             last_user_text = msg.text
             break
     lang = _detect_language_from_text(last_user_text, requested_lang)
-    api_key = settings.google_api_key
-
-    if not api_key:
-        logger.error("GOOGLE_API_KEY is not configured on the backend")
-        raise HTTPException(status_code=503, detail="ARIA service unavailable — API key missing")
-
     system_prompt = _build_system_prompt(payload.context, lang)
-
-    # Build conversation text from last 10 messages
-    conversation_lines = []
-    for msg in (payload.messages or [])[-10:]:
-        role_label = "ARIA" if msg.role == "assistant" else "Farmer"
-        conversation_lines.append(f"{role_label}: {msg.text}")
-    conversation_text = "\n".join(conversation_lines)
-
-    full_prompt = f"{system_prompt}\n\nConversation so far:\n{conversation_text}\n\nARIA:"
+    messages = [
+        {
+            'role': 'assistant' if msg.role == 'assistant' else 'user',
+            'content': msg.text,
+        }
+        for msg in (payload.messages or [])[-10:]
+        if (msg.text or '').strip()
+    ]
 
     try:
-        async with httpx.AsyncClient(timeout=15.0) as client:
-            resp = await client.post(
-                GEMINI_URL,
-                json={
-                    "contents": [{"parts": [{"text": full_prompt}]}],
-                    "generationConfig": {
-                        "temperature": 0.35,
-                        "maxOutputTokens": 500,
-                    },
-                },
-                headers={
-                    "Content-Type": "application/json",
-                    "x-goog-api-key": api_key,
-                },
-            )
-
-        if resp.status_code != 200:
-            logger.error(
-                "Gemini API error",
-                status=resp.status_code,
-                body=resp.text[:500],
-            )
-            return {
-                "reply": _local_aria_fallback(lang, payload.context),
-                "source": "fallback",
-                "language_code": lang,
-            }
-
-        data = resp.json()
-        reply_text = (
-            data.get("candidates", [{}])[0]
-            .get("content", {})
-            .get("parts", [{}])[0]
-            .get("text", "")
-            .strip()
+        completion = await chat_completion(
+            system_prompt=system_prompt,
+            messages=messages,
+            temperature=0.35,
+            max_output_tokens=500,
         )
-
+        reply_text = (completion.get('content') or '').strip()
         if not reply_text:
-            logger.warning("Gemini returned empty content", response=data)
             return {
                 "reply": _local_aria_fallback(lang, payload.context),
                 "source": "fallback",
                 "language_code": lang,
             }
-
-        return {"reply": reply_text, "source": "gemini", "language_code": lang}
-
-    except httpx.HTTPError as exc:
-        logger.error("Gemini network error", error=str(exc))
+        return {
+            'reply': reply_text,
+            'source': completion.get('provider', 'llm'),
+            'language_code': lang,
+        }
+    except HTTPException as exc:
+        logger.error('ARIA chat provider error', error=str(exc.detail))
         return {
             "reply": _local_aria_fallback(lang, payload.context),
             "source": "fallback",
             "language_code": lang,
         }
+
+
+@router.post('/transcribe', response_model=AriaTranscriptionResponse)
+async def aria_transcribe(payload: AriaTranscriptionRequest) -> Dict[str, str]:
+    lang = _normalize_language(payload.language_code)
+    try:
+        audio_bytes = base64.b64decode(payload.audio_base64, validate=True)
+    except (ValueError, binascii.Error) as exc:
+        raise HTTPException(status_code=400, detail='Invalid audio payload') from exc
+
+    if not audio_bytes:
+        raise HTTPException(status_code=400, detail='Audio payload is empty')
+
+    transcript = await transcribe_audio(
+        audio_bytes=audio_bytes,
+        file_name=payload.file_name,
+        mime_type=payload.mime_type,
+        language_code=lang,
+    )
+
+    return {
+        'transcript': transcript.get('text', ''),
+        'source': transcript.get('provider', 'groq'),
+        'language_code': lang,
+    }

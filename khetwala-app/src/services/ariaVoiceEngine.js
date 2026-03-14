@@ -14,10 +14,12 @@
 import * as FileSystem from 'expo-file-system';
 import * as Speech from 'expo-speech';
 import { NativeModules } from 'react-native';
+import { getBackendBaseUrl } from '../config/backend';
 
 const GOOGLE_API_KEY = process.env.EXPO_PUBLIC_GOOGLE_API_KEY || '';
 const GEMINI_URL =
   'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent';
+const BACKEND_URL = getBackendBaseUrl();
 
 const SUPPORTED_LANGUAGE_CODES = ['hi', 'en', 'mr', 'gu', 'kn'];
 const LANGUAGE_NAMES = {
@@ -184,10 +186,30 @@ export const deleteAudio = (uri) => {
  * @returns {string}            Transcribed text, or '' if silence
  */
 export const transcribeAudio = async (audioBase64, mimeType = 'audio/mp4', lang = 'hi') => {
-  if (!GOOGLE_API_KEY) throw new Error('GOOGLE_API_KEY missing');
-
   const safeLang = SUPPORTED_LANGUAGE_CODES.includes(lang) ? lang : 'hi';
   const languageName = LANGUAGE_NAMES[safeLang] || 'Hindi';
+
+  if (!GOOGLE_API_KEY) {
+    const response = await fetch(`${BACKEND_URL}/aria/transcribe`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        audio_base64: audioBase64,
+        mime_type: mimeType,
+        language_code: safeLang,
+      }),
+    });
+
+    if (!response.ok) {
+      const body = await response.text();
+      throw new Error(`Backend transcription ${response.status}: ${body.slice(0, 200)}`);
+    }
+
+    const payload = await response.json();
+    const transcript = String(payload?.transcript || '').trim();
+    if (!transcript || transcript === '[SILENCE]') return '';
+    return transcript;
+  }
 
   const res = await fetch(`${GEMINI_URL}?key=${GOOGLE_API_KEY}`, {
     method: 'POST',

@@ -12,8 +12,9 @@ import {
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { COLORS, ELEVATION, RADIUS, SPACING, TYPOGRAPHY } from '../theme/colors';
 import { useLanguage } from '../context/LanguageContext';
+import { getBackendBaseUrl } from '../config/backend';
 
-const BASE_URL = process.env.EXPO_PUBLIC_BACKEND_URL || 'http://localhost:8000';
+const BASE_URL = getBackendBaseUrl();
 
 const BUYER_TYPES = [
   { id: 'tough_trader', label: 'Tough Trader', icon: 'account-tie', color: '#D32F2F' },

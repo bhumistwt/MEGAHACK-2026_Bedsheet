@@ -8,8 +8,19 @@ known mandi locations.
 """
 
 import json
+from datetime import datetime, timedelta, timezone
+
 from sqlalchemy.orm import Session
-from db.models import CropMeta, SoilProfile, TransportRoute, User
+from db.models import (
+    CropMeta,
+    DealCallLog,
+    DealContact,
+    DealMessage,
+    SoilProfile,
+    TradeRecord,
+    TransportRoute,
+    User,
+)
 from passlib.context import CryptContext
 from core.logging import get_logger
 
@@ -266,10 +277,150 @@ def seed_users(db: Session) -> int:
     return count
 
 
+def seed_demo_trades(db: Session) -> int:
+    """Seed demo trade records so the deals dashboard has usable content."""
+    users = {
+        user.phone: user
+        for user in db.query(User).filter(User.phone.in_([item["phone"] for item in USER_SEED])).all()
+    }
+    if len(users) < 3:
+        logger.warning("Skipping trade seed because demo users are incomplete")
+        return 0
+
+    demo_trades = [
+        {
+            "seller_id": users["9876543001"].id,
+            "buyer_id": users["9876543002"].id,
+            "crop": "onion",
+            "quantity_kg": 1200.0,
+            "price_per_kg": 24.5,
+            "quality_grade": "A",
+            "status": "confirmed",
+            "penalty_rate": 2.5,
+            "delivery_deadline": datetime.now(timezone.utc) + timedelta(days=2),
+        },
+        {
+            "seller_id": users["9876543003"].id,
+            "buyer_id": users["9876543001"].id,
+            "crop": "wheat",
+            "quantity_kg": 2200.0,
+            "price_per_kg": 28.0,
+            "quality_grade": "B",
+            "status": "created",
+            "penalty_rate": 1.8,
+            "delivery_deadline": datetime.now(timezone.utc) + timedelta(days=5),
+        },
+    ]
+
+    inserted = 0
+    for item in demo_trades:
+        existing = db.query(TradeRecord).filter(
+            TradeRecord.seller_id == item["seller_id"],
+            TradeRecord.buyer_id == item["buyer_id"],
+            TradeRecord.crop == item["crop"],
+        ).first()
+        if existing:
+            continue
+
+        total_amount = float(item["quantity_kg"]) * float(item["price_per_kg"])
+        db.add(
+            TradeRecord(
+                seller_id=item["seller_id"],
+                buyer_id=item["buyer_id"],
+                crop=item["crop"],
+                quantity_kg=item["quantity_kg"],
+                price_per_kg=item["price_per_kg"],
+                total_amount=total_amount,
+                quality_grade=item["quality_grade"],
+                status=item["status"],
+                penalty_rate=item["penalty_rate"],
+                delivery_deadline=item["delivery_deadline"],
+            )
+        )
+        inserted += 1
+
+    db.commit()
+    logger.info(f"Seeded {inserted} demo trade records")
+    return inserted
+
+
+def seed_demo_communications(db: Session) -> int:
+    """Seed one connected trade thread so chat/call actions can be demonstrated."""
+    trade = db.query(TradeRecord).filter(
+        TradeRecord.crop == "onion",
+        TradeRecord.status == "confirmed",
+    ).order_by(TradeRecord.id.asc()).first()
+
+    if not trade:
+        logger.warning("Skipping communication seed because no confirmed demo trade exists")
+        return 0
+
+    user_a_id, user_b_id = sorted([int(trade.seller_id), int(trade.buyer_id)])
+    inserted = 0
+
+    existing_contact = db.query(DealContact).filter(
+        DealContact.user_a_id == user_a_id,
+        DealContact.user_b_id == user_b_id,
+    ).first()
+    if not existing_contact:
+        existing_contact = DealContact(user_a_id=user_a_id, user_b_id=user_b_id)
+        db.add(existing_contact)
+        db.flush()
+        inserted += 1
+
+    existing_message = db.query(DealMessage).filter(
+        DealMessage.trade_id == trade.id,
+        DealMessage.sender_id == trade.seller_id,
+        DealMessage.receiver_id == trade.buyer_id,
+    ).first()
+    if not existing_message:
+        db.add(
+            DealMessage(
+                trade_id=trade.id,
+                sender_id=trade.seller_id,
+                receiver_id=trade.buyer_id,
+                message_text="Crop is sorted and packing is done. We can confirm dispatch today.",
+                status="read",
+                delivered_at=datetime.now(timezone.utc),
+                read_at=datetime.now(timezone.utc),
+            )
+        )
+        inserted += 1
+
+    existing_call = db.query(DealCallLog).filter(
+        DealCallLog.trade_id == trade.id,
+        DealCallLog.caller_id == trade.seller_id,
+        DealCallLog.receiver_id == trade.buyer_id,
+    ).first()
+    if not existing_call:
+        started_at = datetime.now(timezone.utc) - timedelta(minutes=18)
+        db.add(
+            DealCallLog(
+                trade_id=trade.id,
+                caller_id=trade.seller_id,
+                receiver_id=trade.buyer_id,
+                call_type="audio",
+                call_status="ended",
+                room_id=f"demo-trade-{trade.id}-audio",
+                room_url=f"https://meet.jit.si/demo-trade-{trade.id}-audio",
+                started_at=started_at,
+                ended_at=started_at + timedelta(minutes=4),
+                duration_seconds=240,
+            )
+        )
+        inserted += 1
+
+    db.commit()
+    logger.info(f"Seeded {inserted} demo communication records")
+    return inserted
+
+
 def run_all_seeds(db: Session) -> dict:
     """Run all seed operations."""
     results = {
         "users": seed_users(db),
+        "trades": seed_demo_trades(db),
+        "communications": seed_demo_communications(db),
         "crop_meta": seed_crop_meta(db),
         "soil_profiles": seed_soil_profiles(db),
         "transport_routes": seed_transport_routes(db),

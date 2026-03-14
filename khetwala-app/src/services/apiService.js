@@ -1,6 +1,7 @@
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import NetInfo from '@react-native-community/netinfo';
+import { getBackendBaseUrl, getBackendCandidates } from '../config/backend';
 
 /**
  * Khetwala API Service
@@ -14,7 +15,8 @@ import NetInfo from '@react-native-community/netinfo';
 // Base URL configuration - use environment variable or default to localhost
 // For USB debugging: Use 'http://localhost:8000' with `adb reverse tcp:8000 tcp:8000`
 // For WiFi: Set EXPO_PUBLIC_BACKEND_URL to your computer's LAN IP
-const BASE_URL = process.env.EXPO_PUBLIC_BACKEND_URL || 'http://localhost:8000';
+const BASE_URL = getBackendBaseUrl();
+const BACKEND_CANDIDATES = getBackendCandidates();
 const TOKEN_KEY = '@khetwala_auth_token';
 const GUEST_TOKEN = '@guest_session';
 
@@ -49,6 +51,26 @@ apiClient.interceptors.request.use(async (config) => {
 apiClient.interceptors.response.use(
   (response) => response,
   async (error) => {
+    const config = error?.config || null;
+    const status = error?.response?.status;
+    const canRetryOnAlternateBase =
+      !!config &&
+      !config._retriedOnAlternateBase &&
+      !status &&
+      (error?.message === 'Network Error' || error?.code === 'ERR_NETWORK' || error?.code === 'ECONNABORTED');
+
+    if (canRetryOnAlternateBase) {
+      const currentBase = String(config.baseURL || apiClient.defaults.baseURL || '').replace(/\/+$/, '');
+      const alternateBase = BACKEND_CANDIDATES.find((candidate) => candidate !== currentBase);
+
+      if (alternateBase) {
+        config._retriedOnAlternateBase = true;
+        config.baseURL = alternateBase;
+        apiClient.defaults.baseURL = alternateBase;
+        return apiClient.request(config);
+      }
+    }
+
     // Enrich error with connectivity info
     if (error.message === 'Network Error' || error.code === 'ERR_NETWORK') {
       const online = await isDeviceOnline();

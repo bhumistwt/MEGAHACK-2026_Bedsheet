@@ -23,7 +23,6 @@
     },
     "web": {
       "favicon": "./assets/logo.png"
-    },
-    "assets": ["./assets"]
+    }
   }
 }

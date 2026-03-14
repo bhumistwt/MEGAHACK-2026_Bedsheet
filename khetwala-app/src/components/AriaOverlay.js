@@ -18,6 +18,7 @@
 
 import React, { useEffect, useRef, memo, useState } from 'react';
 import {
+  Alert,
   Animated,
   Dimensions,
   Keyboard,
@@ -34,6 +35,8 @@ import { useNavigation } from '@react-navigation/native';
 import { COLORS } from '../theme/colors';
 import { useAria, MODES } from '../context/AriaContext';
 import { useLanguage } from '../context/LanguageContext';
+import { useAuth } from '../context/AuthContext';
+import { requestAIVoiceCall } from '../services/apiService';
 
 const { width: SCREEN_W } = Dimensions.get('window');
 
@@ -210,7 +213,8 @@ const PulseRing = memo(({ active }) => {
 /* ─── Main Overlay ─────────────────────────────────────────────────────────── */
 
 export default function AriaOverlay() {
-  const { language } = useLanguage();
+  const { language, t } = useLanguage();
+  const { user } = useAuth();
   const {
     mode,
     wakeWordEnabled,
@@ -228,6 +232,7 @@ export default function AriaOverlay() {
   const navigation = useNavigation();
   const [currentRoute, setCurrentRoute] = useState(null);
   const [keyboardHeight, setKeyboardHeight] = useState(0);
+  const [aiCallLoading, setAICallLoading] = useState(false);
 
   useEffect(() => {
     const onShow = (event) => {
@@ -272,17 +277,76 @@ export default function AriaOverlay() {
   const fabBottom = keyboardHeight > 0
     ? keyboardHeight + 16
     : 88 + insets.bottom;
+  const hideOverlayActions = currentRoute === 'Login' || currentRoute === 'Register';
 
   /* ── FAB icon logic ──────────────────────────────────────────────── */
   const fabIcon = wakeWordEnabled && mode === MODES.WAKE_LISTENING
     ? 'ear-hearing'
     : 'microphone';
 
+  const normalizeDialablePhone = (rawPhone) => {
+    const raw = String(rawPhone || '').trim();
+    if (!raw) return null;
+    if (raw.startsWith('+')) {
+      const cleaned = `+${raw.slice(1).replace(/\D/g, '')}`;
+      return cleaned.length >= 11 ? cleaned : null;
+    }
+    const digits = raw.replace(/\D/g, '');
+    if (digits.length === 10) return `+91${digits}`;
+    if (digits.length >= 11) return `+${digits}`;
+    return null;
+  };
+
+  const onCallMePress = async () => {
+    if (aiCallLoading) return;
+    setAICallLoading(true);
+    try {
+      const toPhone = normalizeDialablePhone(user?.phone);
+      if (!toPhone) {
+        Alert.alert(t('common.error'), t('deals.aiCallPhoneMissing'));
+        return;
+      }
+
+      const result = await requestAIVoiceCall({
+        toPhone,
+        userId: Number.isFinite(Number(user?.id)) ? Number(user?.id) : undefined,
+        languageCode: language || 'en',
+        initialPrompt: 'Farmer requested AI assistance call from Call Me icon.',
+      });
+
+      if (!result?.ok) {
+        Alert.alert(t('common.error'), t('deals.aiCallFailed'));
+        return;
+      }
+
+      Alert.alert(t('common.ok'), t('deals.aiCallRequested'));
+    } finally {
+      setAICallLoading(false);
+    }
+  };
+
   return (
     <>
       {/* ═══ Floating Action Button ═══════════════════════════════════════ */}
-      {!overlayVisible && (
+      {!overlayVisible && !hideOverlayActions && (
         <View style={[styles.fabWrap, { bottom: fabBottom, right: responsiveRight }]}>
+          <Pressable
+            onPress={onCallMePress}
+            android_ripple={{ color: 'rgba(255,255,255,0.25)', borderless: true }}
+            style={({ pressed }) => [
+              styles.callFab,
+              pressed && styles.fabPressed,
+              aiCallLoading && styles.callFabLoading,
+            ]}
+          >
+            <MaterialCommunityIcons
+              name={aiCallLoading ? 'progress-clock' : 'phone-in-talk'}
+              size={20}
+              color="#FFF"
+            />
+            <Text style={styles.callFabText}>{t('deals.aiCall')}</Text>
+          </Pressable>
+
           <PulseRing active={wakeWordEnabled && mode === MODES.WAKE_LISTENING} />
           <Pressable
             onPress={onMicPress}
@@ -418,9 +482,35 @@ const styles = StyleSheet.create({
     right: 18,
     zIndex: 999,
     alignItems: 'center',
-    justifyContent: 'center',
+    justifyContent: 'flex-end',
     width: FAB_SIZE + 20,
-    height: FAB_SIZE + 20,
+    height: FAB_SIZE + 96,
+    gap: 10,
+  },
+  callFab: {
+    minWidth: 132,
+    height: 44,
+    borderRadius: 22,
+    paddingHorizontal: 12,
+    backgroundColor: COLORS.secondary,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    elevation: 7,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+  },
+  callFabLoading: {
+    opacity: 0.85,
+  },
+  callFabText: {
+    color: '#FFF',
+    fontSize: 12,
+    fontWeight: '700',
+    letterSpacing: 0.2,
   },
   fab: {
     width: FAB_SIZE,

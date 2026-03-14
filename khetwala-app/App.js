@@ -133,7 +133,7 @@ function MainTabs() {
         },
       })}
     >
-      <Tab.Screen name="Home" component={HomeScreen} />
+      <Tab.Screen name="Home" component={DashboardScreen} />
       <Tab.Screen name="Market" component={MarketScreen} />
       <Tab.Screen name="Disease" component={DiseaseScreen} options={{ tabBarLabel: 'Scan' }} />
       <Tab.Screen name="ARIA" component={ARIAScreen} />
@@ -174,6 +174,7 @@ function AppNavigator() {
       <Stack.Screen name="Alerts" component={AlertsScreen} />
       <Stack.Screen name="Schemes" component={SchemesScreen} />
       <Stack.Screen name="Dashboard" component={DashboardScreen} />
+      <Stack.Screen name="HomeOverview" component={HomeScreen} />
       {/* F1-F17 New Feature Screens */}
       <Stack.Screen name="DigitalTwin" component={DigitalTwinScreen} />
       <Stack.Screen name="PhotoDiagnostic" component={PhotoDiagnosticScreen} />

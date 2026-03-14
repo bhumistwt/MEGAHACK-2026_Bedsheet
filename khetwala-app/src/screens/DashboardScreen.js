@@ -18,8 +18,9 @@ import { useFocusEffect } from '@react-navigation/native';
 import { COLORS, ELEVATION, RADIUS, SPACING, TYPOGRAPHY } from '../theme/colors';
 import { useAuth } from '../context/AuthContext';
 import { useLanguage } from '../context/LanguageContext';
+import { getBackendBaseUrl } from '../config/backend';
 
-const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL || 'http://localhost:8000';
+const API_URL = getBackendBaseUrl();
 
 export default function DashboardScreen({ navigation }) {
   const { user, refreshProfile } = useAuth();
@@ -27,6 +28,29 @@ export default function DashboardScreen({ navigation }) {
   const [refreshing, setRefreshing] = useState(false);
   const [lessons, setLessons] = useState([]);
   const [stories, setStories] = useState([]);
+
+  const coreTools = [
+    { icon: 'calendar-check', title: t('home.harvestAdvisor'), subtitle: t('home.harvestAdvisorSub'), screen: 'CropInput', color: '#1B5E20', bg: '#E8F5E9' },
+    { icon: 'store', title: t('home.bestMandi'), subtitle: t('home.bestMandiSub'), screen: 'Market', color: '#0277BD', bg: '#E1F5FE' },
+    { icon: 'package-variant', title: t('home.spoilageRisk'), subtitle: t('home.spoilageRiskSub'), screen: 'Spoilage', color: '#E65100', bg: '#FFF3E0' },
+    { icon: 'leaf-circle-outline', title: t('home.diseaseScanner'), subtitle: t('home.diseaseScannerSub'), screen: 'Disease', color: '#2E7D32', bg: '#F1F8E9' },
+    { icon: 'bank', title: t('home.govtSchemes'), subtitle: t('home.govtSchemesSub'), screen: 'Schemes', color: '#4527A0', bg: '#EDE7F6' },
+    { icon: 'bell-ring-outline', title: t('home.smartAlerts'), subtitle: t('home.smartAlertsSub'), screen: 'Alerts', color: '#C62828', bg: '#FFEBEE' },
+    { icon: 'earth', title: t('soilHealth.cardTitle'), subtitle: t('soilHealth.cardSub'), screen: 'SoilHealth', color: '#795548', bg: '#EFEBE9' },
+    { icon: 'handshake', title: t('deals.cardTitle'), subtitle: t('deals.cardSub'), screen: 'Deals', color: '#1565C0', bg: '#E3F2FD' },
+  ];
+
+  const advancedFeatures = [
+    { icon: 'dna', label: 'Digital Twin', screen: 'DigitalTwin', color: '#1B5E20', bg: '#E8F5E9' },
+    { icon: 'camera-burst', label: 'Photo Scan', screen: 'PhotoDiagnostic', color: '#BF360C', bg: '#FBE9E7' },
+    { icon: 'handshake', label: 'Negotiate', screen: 'NegotiationSimulator', color: '#5D4037', bg: '#EFEBE9' },
+    { icon: 'water-percent', label: 'Soil Health', screen: 'SoilHealth', color: '#6A1B9A', bg: '#F3E5F5' },
+    { icon: 'notebook', label: 'Crop Diary', screen: 'CropDiary', color: '#33691E', bg: '#F1F8E9' },
+    { icon: 'cart', label: 'Marketplace', screen: 'Marketplace', color: '#E65100', bg: '#FFF3E0' },
+    { icon: 'store', label: 'B2B Connect', screen: 'BuyerConnect', color: '#0D47A1', bg: '#E3F2FD' },
+    { icon: 'snowflake', label: 'Cold Storage', screen: 'ColdStorage', color: '#01579B', bg: '#E1F5FE' },
+    user?.is_admin ? { icon: 'shield-account', label: 'Telemetry', screen: 'TelemetryAdmin', color: '#4A148C', bg: '#F3E5F5' } : null,
+  ].filter(Boolean);
 
   // Fetch F4 loss lessons
   const fetchLessons = async () => {
@@ -67,7 +91,7 @@ export default function DashboardScreen({ navigation }) {
   const quickActions = [
     { icon: 'chart-line', label: t('dashboard.checkPrices'), screen: 'Market', color: '#0277BD', bg: '#E1F5FE' },
     { icon: 'leaf', label: t('dashboard.scanDisease'), screen: 'Disease', color: '#2E7D32', bg: '#E8F5E9' },
-    { icon: 'weather-partly-cloudy', label: t('dashboard.weather'), screen: 'HomeScreen', color: '#E65100', bg: '#FFF3E0' },
+    { icon: 'weather-partly-cloudy', label: t('dashboard.weather'), screen: 'Alerts', color: '#E65100', bg: '#FFF3E0' },
     { icon: 'account-cog', label: t('dashboard.editProfile'), screen: 'Profile', color: '#6A1B9A', bg: '#F3E5F5' },
   ];
 
@@ -138,6 +162,24 @@ export default function DashboardScreen({ navigation }) {
           ))}
         </View>
 
+        <Text style={styles.sectionTitle}>Core Tools</Text>
+        <View style={styles.coreToolsGrid}>
+          {coreTools.map((tool) => (
+            <TouchableOpacity
+              key={tool.title}
+              style={styles.coreToolCard}
+              activeOpacity={0.7}
+              onPress={() => navigation.navigate(tool.screen)}
+            >
+              <View style={[styles.coreToolIconWrap, { backgroundColor: tool.bg }]}> 
+                <MaterialCommunityIcons name={tool.icon} size={24} color={tool.color} />
+              </View>
+              <Text style={styles.coreToolTitle} numberOfLines={1}>{tool.title}</Text>
+              <Text style={styles.coreToolSubtitle} numberOfLines={2}>{tool.subtitle}</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+
         {/* ── AI Insights Card ──────────────────────────────────────── */}
         <TouchableOpacity style={styles.insightCard} onPress={() => navigation.navigate('ARIA')} activeOpacity={0.8}>
           <View style={styles.insightIconWrap}>
@@ -187,16 +229,7 @@ export default function DashboardScreen({ navigation }) {
         {/* ── New Feature Quick Links ──────────────────────────────── */}
         <Text style={styles.sectionTitle}>🚀 Explore Features</Text>
         <View style={styles.featureGrid}>
-          {[
-            { icon: 'dna', label: 'Digital Twin', screen: 'DigitalTwin', color: '#1B5E20', bg: '#E8F5E9' },
-            { icon: 'camera-burst', label: 'Photo Scan', screen: 'PhotoDiagnostic', color: '#BF360C', bg: '#FBE9E7' },
-            { icon: 'handshake', label: 'Negotiate', screen: 'NegotiationSimulator', color: '#5D4037', bg: '#EFEBE9' },
-            { icon: 'water-percent', label: 'Soil Health', screen: 'SoilHealth', color: '#6A1B9A', bg: '#F3E5F5' },
-            { icon: 'notebook', label: 'Crop Diary', screen: 'CropDiary', color: '#33691E', bg: '#F1F8E9' },
-            { icon: 'cart', label: 'Marketplace', screen: 'Marketplace', color: '#E65100', bg: '#FFF3E0' },
-            { icon: 'store', label: 'B2B Connect', screen: 'BuyerConnect', color: '#0D47A1', bg: '#E3F2FD' },
-            { icon: 'snowflake', label: 'Cold Storage', screen: 'ColdStorage', color: '#01579B', bg: '#E1F5FE' },
-          ].map((f, i) => (
+          {advancedFeatures.map((f, i) => (
             <TouchableOpacity key={i} style={[styles.featureBtn, { backgroundColor: f.bg }]}
               onPress={() => navigation.navigate(f.screen)}>
               <MaterialCommunityIcons name={f.icon} size={22} color={f.color} />
@@ -265,6 +298,31 @@ const styles = StyleSheet.create({
     justifyContent: 'center', alignItems: 'center', marginBottom: SPACING.sm,
   },
   actionLabel: { ...TYPOGRAPHY.labelMedium, color: COLORS.onSurface, textAlign: 'center', fontWeight: '600' },
+
+  coreToolsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+    rowGap: SPACING.sm,
+    marginBottom: SPACING.sm,
+  },
+  coreToolCard: {
+    width: '48%',
+    backgroundColor: COLORS.surface,
+    borderRadius: RADIUS.lg,
+    padding: SPACING.md,
+    ...ELEVATION.level1,
+  },
+  coreToolIconWrap: {
+    width: 44,
+    height: 44,
+    borderRadius: RADIUS.md,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: SPACING.sm,
+  },
+  coreToolTitle: { ...TYPOGRAPHY.titleSmall, color: COLORS.onSurface, fontWeight: '700' },
+  coreToolSubtitle: { ...TYPOGRAPHY.bodySmall, color: COLORS.onSurfaceVariant, marginTop: 2 },
 
   insightCard: {
     flexDirection: 'row', alignItems: 'center',

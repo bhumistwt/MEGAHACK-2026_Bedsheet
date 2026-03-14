@@ -1,8 +1,9 @@
 import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';
+import { getBackendBaseUrl } from '../config/backend';
 
-const BASE_URL = process.env.EXPO_PUBLIC_BACKEND_URL || 'http://localhost:8000';
+const BASE_URL = getBackendBaseUrl();
 const GUEST_TOKEN = '@guest_session';
 const TOKEN_KEY = '@khetwala_auth_token';
 const USER_KEY = '@khetwala_auth_user';

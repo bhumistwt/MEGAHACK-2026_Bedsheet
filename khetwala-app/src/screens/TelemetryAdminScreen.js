@@ -13,8 +13,9 @@ import {
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { COLORS, ELEVATION, RADIUS, SPACING, TYPOGRAPHY } from '../theme/colors';
 import { useAuth } from '../context/AuthContext';
+import { getBackendBaseUrl } from '../config/backend';
 
-const API_BASE_URL = process.env.EXPO_PUBLIC_BACKEND_URL || 'http://localhost:8000';
+const API_BASE_URL = getBackendBaseUrl();
 
 export default function TelemetryAdminScreen({ navigation }) {
   const { user } = useAuth();

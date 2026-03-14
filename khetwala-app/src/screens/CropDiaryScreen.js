@@ -13,8 +13,9 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { COLORS, ELEVATION, RADIUS, SPACING, TYPOGRAPHY } from '../theme/colors';
 import { useAuth } from '../context/AuthContext';
 import { useLanguage } from '../context/LanguageContext';
+import { getBackendBaseUrl } from '../config/backend';
 
-const BASE_URL = process.env.EXPO_PUBLIC_BACKEND_URL || 'http://localhost:8000';
+const BASE_URL = getBackendBaseUrl();
 
 const TAG_COLORS = {
   irrigation: '#1565C0', fertilizer: '#2E7D32', pesticide: '#D32F2F',

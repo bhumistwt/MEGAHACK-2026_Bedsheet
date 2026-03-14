@@ -2,8 +2,8 @@
 Khetwala-मित्र ARIA 2.0 Agent Router
 ═══════════════════════════════════════════════════════════════════════════════
 
-Agentic endpoint that uses Gemini function-calling to execute tasks
-on behalf of the farmer.  The agent loop: Think → Plan → Act → Confirm.
+Agentic endpoint that uses the configured LLM provider with tool-calling
+to execute tasks on behalf of the farmer. The agent loop: Think → Plan → Act → Confirm.
 
 Tools available to the agent:
   1. get_weather        – current & forecast weather for a district
@@ -21,7 +21,6 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
-import httpx
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
@@ -37,16 +36,12 @@ from db.models import (
 )
 from db.session import get_db
 from services.mandi_service import fetch_mandi_features
+from services.llm_service import active_text_provider, chat_completion
 from services.weather_service import fetch_current_weather
 
 logger = get_logger("khetwala.routers.aria_agent")
 
 router = APIRouter(prefix="/aria", tags=["aria-agent"])
-
-GEMINI_URL = (
-    "https://generativelanguage.googleapis.com/v1beta/models/"
-    "gemini-2.5-flash:generateContent"
-)
 
 MAX_AGENT_TURNS = 6  # safety: max tool-call round-trips
 
@@ -91,11 +86,11 @@ class AgentResponse(BaseModel):
     tool_actions: List[ToolAction] = []
     navigate_to: Optional[str] = None
     memories_updated: int = 0
-    source: str = "gemini-agent"
+    source: str = "llm-agent"
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# Gemini Tool Declarations (function-calling schema)
+# Tool Declarations (provider-agnostic schema)
 # ══════════════════════════════════════════════════════════════════════════════
 
 TOOL_DECLARATIONS = [
@@ -465,104 +460,14 @@ Use store_memory proactively to remember important things the farmer tells you.
 """
 
 
-# ══════════════════════════════════════════════════════════════════════════════
-# Gemini API call with function-calling
-# ══════════════════════════════════════════════════════════════════════════════
-
-
-def _build_gemini_contents(
-    system_prompt: str,
-    messages: List[AgentMessage],
-    tool_results: list | None = None,
-) -> list:
-    """Build Gemini contents array from conversation history."""
-    contents = []
-
-    # System instruction via first user turn
-    conversation_parts = []
-
+def _build_agent_messages(messages: List[AgentMessage]) -> list[dict[str, Any]]:
+    conversation = []
     for msg in messages[-12:]:
-        role = "user" if msg.role == "user" else "model"
-        conversation_parts.append({"role": role, "parts": [{"text": msg.text}]})
-
-    if not conversation_parts:
-        conversation_parts.append({"role": "user", "parts": [{"text": "(start)"}]})
-
-    return conversation_parts
-
-
-async def _call_gemini(
-    system_prompt: str,
-    contents: list,
-    tool_results: list | None = None,
-) -> dict:
-    """Call Gemini with function declarations and return the raw response."""
-    api_key = settings.google_api_key
-    if not api_key:
-        raise HTTPException(status_code=503, detail="ARIA agent unavailable — API key missing")
-
-    body: Dict[str, Any] = {
-        "system_instruction": {"parts": [{"text": system_prompt}]},
-        "contents": contents,
-        "tools": [{"function_declarations": TOOL_DECLARATIONS}],
-        "tool_config": {"function_calling_config": {"mode": "AUTO"}},
-        "generationConfig": {
-            "temperature": 0.4,
-            "maxOutputTokens": 800,
-        },
-    }
-
-    if tool_results:
-        # Append tool results as a user turn
-        tool_parts = []
-        for tr in tool_results:
-            tool_parts.append({
-                "functionResponse": {
-                    "name": tr["name"],
-                    "response": tr["response"],
-                }
-            })
-        contents.append({"role": "user", "parts": tool_parts})
-
-    async with httpx.AsyncClient(timeout=25.0) as client:
-        resp = await client.post(
-            GEMINI_URL,
-            json=body,
-            headers={
-                "Content-Type": "application/json",
-                "x-goog-api-key": api_key,
-            },
-        )
-
-    if resp.status_code != 200:
-        logger.error("Gemini agent error", status=resp.status_code, body=resp.text[:500])
-        raise HTTPException(status_code=502, detail=f"Gemini returned {resp.status_code}")
-
-    return resp.json()
-
-
-def _extract_function_calls(candidate: dict) -> list:
-    """Extract function call parts from a Gemini candidate."""
-    parts = candidate.get("content", {}).get("parts", [])
-    calls = []
-    for part in parts:
-        fc = part.get("functionCall")
-        if fc:
-            calls.append({
-                "name": fc.get("name", ""),
-                "args": fc.get("args", {}),
-            })
-    return calls
-
-
-def _extract_text(candidate: dict) -> str:
-    """Extract text reply from a Gemini candidate."""
-    parts = candidate.get("content", {}).get("parts", [])
-    texts = []
-    for part in parts:
-        if "text" in part:
-            texts.append(part["text"])
-    return "\n".join(texts).strip()
+        role = 'assistant' if msg.role == 'assistant' else 'user'
+        conversation.append({'role': role, 'content': msg.text})
+    if not conversation:
+        conversation.append({'role': 'user', 'content': '(start)'})
+    return conversation
 
 
 def _detect_emotion(text: str) -> Optional[str]:
@@ -612,9 +517,9 @@ async def aria_agent(
 
     Flow:
       1. Build system prompt with farmer context + memories
-      2. Send to Gemini with tool declarations
-      3. If Gemini returns function_calls → execute tools → feed results back
-      4. Repeat until Gemini returns a text reply (max 6 turns)
+    2. Send to configured LLM with tool declarations
+    3. If the model returns tool_calls → execute tools → feed results back
+    4. Repeat until the model returns a text reply (max 6 turns)
       5. Detect emotion in user's last message
       6. Return reply + tool actions + emotion + navigation intent
     """
@@ -643,8 +548,7 @@ async def aria_agent(
 
     system_prompt = _build_agent_system_prompt(ctx, lang, memories)
 
-    # ── Build initial Gemini contents ─────────────────────────────────────
-    contents = _build_gemini_contents(system_prompt, payload.messages)
+    messages = _build_agent_messages(payload.messages)
 
     # ── Detect emotion in latest user message ─────────────────────────────
     user_msgs = [m for m in payload.messages if m.role == "user"]
@@ -657,28 +561,49 @@ async def aria_agent(
     navigate_to = None
     memories_updated = 0
     final_reply = ""
+    source_provider = active_text_provider() or 'llm'
 
     for turn in range(MAX_AGENT_TURNS):
-        gemini_resp = await _call_gemini(system_prompt, contents)
-
-        candidates = gemini_resp.get("candidates", [])
-        if not candidates:
-            logger.warning("Gemini returned no candidates", resp=gemini_resp)
+        try:
+            llm_resp = await chat_completion(
+                system_prompt=system_prompt,
+                messages=messages,
+                tools=TOOL_DECLARATIONS,
+                temperature=0.4,
+                max_output_tokens=800,
+            )
+        except HTTPException as exc:
+            logger.warning("ARIA agent provider unavailable, using fallback reply", detail=str(exc.detail))
             break
-
-        candidate = candidates[0]
-        fn_calls = _extract_function_calls(candidate)
+        source_provider = llm_resp.get('provider', source_provider)
+        fn_calls = llm_resp.get('tool_calls', [])
 
         if not fn_calls:
-            # Terminal turn — Gemini returned text
-            final_reply = _extract_text(candidate)
+            final_reply = (llm_resp.get('content') or '').strip()
             break
 
+        messages.append(
+            {
+                'role': 'assistant',
+                'content': llm_resp.get('content', ''),
+                'tool_calls': [
+                    {
+                        'id': fc.get('id'),
+                        'name': fc.get('name', ''),
+                        'arguments': fc.get('arguments', {}),
+                    }
+                    for fc in fn_calls
+                ],
+            }
+        )
+
         # Execute tool calls
-        tool_results = []
         for fc in fn_calls:
-            tool_name = fc["name"]
-            tool_args = fc["args"]
+            tool_name = fc.get('name', '')
+            tool_args = fc.get('arguments', {})
+
+            if user_id and tool_name in {'get_user_profile', 'get_memories', 'store_memory'}:
+                tool_args['user_id'] = int(user_id)
 
             # Inject user_id if tool needs it and it's available
             if user_id and "user_id" in str(TOOL_EXECUTORS.get(tool_name, lambda **_: {}).__code__.co_varnames):
@@ -695,26 +620,20 @@ async def aria_agent(
                     result = {"error": str(e)}
 
             tool_actions.append(ToolAction(tool=tool_name, args=tool_args, result=result))
-            tool_results.append({"name": tool_name, "response": result})
+            messages.append(
+                {
+                    'role': 'tool',
+                    'tool_call_id': fc.get('id'),
+                    'name': tool_name,
+                    'content': json.dumps(result, ensure_ascii=False),
+                }
+            )
 
             # Track special results
             if tool_name == "open_screen":
                 navigate_to = result.get("navigate_to")
             if tool_name == "store_memory" and result.get("stored"):
                 memories_updated += 1
-
-        # Append model's function-call turn + our tool responses
-        contents.append(candidate["content"])
-        tool_response_parts = [
-            {
-                "functionResponse": {
-                    "name": tr["name"],
-                    "response": tr["response"],
-                }
-            }
-            for tr in tool_results
-        ]
-        contents.append({"role": "user", "parts": tool_response_parts})
 
     if not final_reply:
         final_reply = _get_fallback_reply(lang)
@@ -749,7 +668,7 @@ async def aria_agent(
         "tool_actions": tool_actions,
         "navigate_to": navigate_to,
         "memories_updated": memories_updated,
-        "source": "gemini-agent",
+        "source": f"{source_provider}-agent",
     }
 
 

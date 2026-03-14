@@ -19,11 +19,12 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getDialectGreeting, getEncouragement, getMoodConfig } from '../data/dialects';
 import { detectLanguageCode } from './ariaVoiceEngine';
+import { getBackendBaseUrl } from '../config/backend';
 
 // ─── Configuration ────────────────────────────────────────────────────────────
 
 const GOOGLE_API_KEY = process.env.EXPO_PUBLIC_GOOGLE_API_KEY || '';
-const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL || 'http://localhost:8000';
+const BACKEND_URL = getBackendBaseUrl();
 
 const GEMINI_URL =
   'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent';

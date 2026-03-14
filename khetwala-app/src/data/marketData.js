@@ -1,4 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { getBackendBaseUrl } from '../config/backend';
 
 export const DISTRICTS = ['Nashik', 'Pune', 'Nagpur', 'Aurangabad', 'Solapur', 'Kolhapur'];
 const DISTRICT_ALIASES = {
@@ -26,7 +27,7 @@ const CROP_EMOJI = {
   sugarcane: '🎋',
 };
 
-const API_BASE_URL = process.env.EXPO_PUBLIC_BACKEND_URL || 'http://localhost:8000';
+const API_BASE_URL = getBackendBaseUrl();
 const MARKET_CACHE_PREFIX = 'market_prices_v1';
 
 export async function sendMarketTelemetry(eventName, payload = {}) {

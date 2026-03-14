@@ -1,12 +1,16 @@
 from functools import lru_cache
+from pathlib import Path
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
+BASE_DIR = Path(__file__).resolve().parents[1]
+
+
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_file='.env',
+        env_file=(str(BASE_DIR / '.env'), '.env'),
         env_file_encoding='utf-8',
         case_sensitive=False,
         extra='ignore',
@@ -21,6 +25,10 @@ class Settings(BaseSettings):
     data_gov_base_url: str = Field(default='https://api.data.gov.in', alias='DATA_GOV_BASE_URL')
     data_gov_resource_id: str = Field(default='9ef84268-d588-465a-a308-a864a43d0070', alias='DATA_GOV_RESOURCE_ID')
     google_api_key: str = Field(default='', alias='GOOGLE_API_KEY')
+    groq_api_key: str = Field(default='', alias='GROQ_API_KEY')
+    llm_provider: str = Field(default='groq', alias='LLM_PROVIDER')
+    groq_chat_model: str = Field(default='llama-3.3-70b-versatile', alias='GROQ_CHAT_MODEL')
+    groq_audio_model: str = Field(default='whisper-large-v3-turbo', alias='GROQ_AUDIO_MODEL')
     twilio_account_sid: str = Field(default='', alias='TWILIO_ACCOUNT_SID')
     twilio_auth_token: str = Field(default='', alias='TWILIO_AUTH_TOKEN')
     twilio_phone_number: str = Field(default='', alias='TWILIO_PHONE_NUMBER')
@@ -55,13 +63,17 @@ class Settings(BaseSettings):
     def datagov_api_key(self) -> str:
         return self.data_gov_api_key
 
+    @property
+    def has_llm_provider(self) -> bool:
+        return bool((self.groq_api_key or '').strip() or (self.google_api_key or '').strip())
+
     def get_api_status(self) -> dict[str, str]:
         return {
             'market': 'active' if self.data_gov_api_key else 'fallback',
             'weather': 'active',
             'predict': 'active',
-            'aria': 'active' if self.google_api_key else 'fallback',
-            'voice_agent': 'active' if self.google_api_key else 'fallback',
+            'aria': 'active' if self.has_llm_provider else 'fallback',
+            'voice_agent': 'active' if self.has_llm_provider else 'fallback',
         }
 
 
