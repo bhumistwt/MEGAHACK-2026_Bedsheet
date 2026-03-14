@@ -18,7 +18,7 @@ import { COLORS } from '../theme/colors';
 const LOGO = require('../../assets/logo.png');
 
 const QUICK_ACCOUNTS = [
-  { name: 'Ashwin', phone: '9876543003', password: 'ashwin123456' },
+  { name: 'Ashwin', phone: '9876543003', password: 'ashwin123456', role: 'Admin' },
   { name: 'Prem', phone: '9876543001', password: 'prem123456' },
   { name: 'Bhumi', phone: '9876543002', password: 'bhumi123456' },
 ];
@@ -103,6 +103,7 @@ export default function LoginScreen({ navigation }) {
           </TouchableOpacity>
 
           <Text style={styles.quickTitle}>Quick Demo Login</Text>
+          <Text style={styles.quickSubTitle}>Tap any account below to login instantly</Text>
           <View style={styles.quickRow}>
             {QUICK_ACCOUNTS.map((account) => (
               <TouchableOpacity
@@ -112,6 +113,7 @@ export default function LoginScreen({ navigation }) {
                 disabled={loading}
               >
                 <Text style={styles.quickChipText}>{account.name}</Text>
+                {account.role ? <Text style={styles.quickRoleText}>{account.role}</Text> : null}
               </TouchableOpacity>
             ))}
           </View>
@@ -181,10 +183,16 @@ const styles = StyleSheet.create({
   },
   quickTitle: {
     marginTop: 14,
-    marginBottom: 8,
+    marginBottom: 4,
     textAlign: 'center',
     color: COLORS.onSurfaceVariant,
     fontWeight: '600',
+  },
+  quickSubTitle: {
+    marginBottom: 8,
+    textAlign: 'center',
+    color: COLORS.onSurfaceVariant,
+    fontSize: 12,
   },
   quickRow: {
     flexDirection: 'row',
@@ -203,6 +211,12 @@ const styles = StyleSheet.create({
   quickChipText: {
     color: COLORS.onSurface,
     fontWeight: '600',
+  },
+  quickRoleText: {
+    marginTop: 2,
+    color: COLORS.primary,
+    fontSize: 10,
+    fontWeight: '700',
   },
   link: {
     marginTop: 16,

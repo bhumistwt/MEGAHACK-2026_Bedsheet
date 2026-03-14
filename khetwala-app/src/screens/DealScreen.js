@@ -17,10 +17,12 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   Linking,
   RefreshControl,
   ScrollView,
   StyleSheet,
+  TextInput,
   TouchableOpacity,
   View,
 } from 'react-native';
@@ -38,6 +40,13 @@ import {
   confirmTradeDelivery,
   lockTradeEscrow,
   releaseTradeEscrow,
+  fetchDealMessages,
+  sendDealMessage,
+  startDealCall,
+  fetchDealCalls,
+  requestDealConnection,
+  markDealMessagesRead,
+  requestAIVoiceCall,
 } from '../services/apiService';
 
 
@@ -72,7 +81,7 @@ function StatusBadge({ status, label }) {
 // Deal Card Component
 // ═══════════════════════════════════════════════════════════════════════════════
 
-function DealCard({ trade, onViewDetails, onAction, t }) {
+function DealCard({ trade, onOpenComm, onAction, t, isCommActive }) {
   return (
     <View style={styles.dealCard}>
       <View style={styles.dealHeader}>
@@ -108,6 +117,13 @@ function DealCard({ trade, onViewDetails, onAction, t }) {
 
       {/* Action buttons */}
       <View style={styles.dealActions}>
+        <TouchableOpacity
+          style={[styles.linkBtn, isCommActive && styles.commBtnActive]}
+          onPress={() => onOpenComm(trade.trade_id)}
+        >
+          <MaterialCommunityIcons name="chat-processing" size={14} color={COLORS.primary} />
+          <Text style={styles.linkBtnText}>{t('deals.openComm')}</Text>
+        </TouchableOpacity>
         {trade.explorer_url && (
           <TouchableOpacity
             style={styles.linkBtn}
@@ -185,9 +201,22 @@ function ProofCard({ proof, t }) {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 export default function DealScreen({ navigation }) {
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
   const { user } = useAuth();
   const userId = user?.id || 1;
+
+  const normalizeDialablePhone = useCallback((rawPhone) => {
+    const raw = String(rawPhone || '').trim();
+    if (!raw) return null;
+    if (raw.startsWith('+')) {
+      const cleaned = `+${raw.slice(1).replace(/\D/g, '')}`;
+      return cleaned.length >= 11 ? cleaned : null;
+    }
+    const digits = raw.replace(/\D/g, '');
+    if (digits.length === 10) return `+91${digits}`;
+    if (digits.length >= 11) return `+${digits}`;
+    return null;
+  }, []);
 
   const [tab, setTab] = useState('deals');
   const [trades, setTrades] = useState([]);
@@ -196,6 +225,13 @@ export default function DealScreen({ navigation }) {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [actionLoading, setActionLoading] = useState(null);
+  const [selectedTradeId, setSelectedTradeId] = useState(null);
+  const [messages, setMessages] = useState([]);
+  const [callLogs, setCallLogs] = useState([]);
+  const [messageInput, setMessageInput] = useState('');
+  const [commLoading, setCommLoading] = useState(false);
+  const [connectionStatusByTrade, setConnectionStatusByTrade] = useState({});
+  const [aiCallLoading, setAICallLoading] = useState(false);
 
   // ─── Data Fetching ─────────────────────────────────────────────────────
 
@@ -224,6 +260,26 @@ export default function DealScreen({ navigation }) {
     loadData();
   }, [loadData]);
 
+  const loadCommunication = useCallback(async (tradeId) => {
+    setCommLoading(true);
+    try {
+      const [msgs, calls] = await Promise.all([
+        fetchDealMessages(tradeId),
+        fetchDealCalls(tradeId),
+      ]);
+      setMessages(msgs || []);
+      setCallLogs(calls || []);
+      await markDealMessagesRead(tradeId);
+      if ((msgs || []).length > 0 || (calls || []).length > 0) {
+        setConnectionStatusByTrade((prev) => ({ ...prev, [tradeId]: 'connected' }));
+      }
+    } catch (e) {
+      console.warn('[DealScreen] load communication failed:', e?.message);
+    } finally {
+      setCommLoading(false);
+    }
+  }, []);
+
   // ─── Trade Actions ─────────────────────────────────────────────────────
 
   const handleAction = useCallback(async (action, tradeId) => {
@@ -243,6 +299,82 @@ export default function DealScreen({ navigation }) {
       setActionLoading(null);
     }
   }, [loadData]);
+
+  const handleOpenCommunication = useCallback(async (tradeId) => {
+    setSelectedTradeId(tradeId);
+    await loadCommunication(tradeId);
+  }, [loadCommunication]);
+
+  const handleRequestConnection = useCallback(async (tradeId) => {
+    const result = await requestDealConnection(tradeId);
+    if (!result) {
+      Alert.alert(t('common.error'), t('deals.connectionFailed'));
+      return;
+    }
+
+    if (result.already_connected) {
+      setConnectionStatusByTrade((prev) => ({ ...prev, [tradeId]: 'connected' }));
+      Alert.alert(t('common.ok'), t('deals.alreadyConnected'));
+      return;
+    }
+
+    setConnectionStatusByTrade((prev) => ({ ...prev, [tradeId]: 'requested' }));
+    Alert.alert(t('common.ok'), t('deals.connectionRequested'));
+  }, [t]);
+
+  const handleSendMessage = useCallback(async () => {
+    if (!selectedTradeId || !messageInput.trim()) return;
+
+    const sent = await sendDealMessage(selectedTradeId, messageInput.trim());
+    if (!sent) {
+      Alert.alert(t('common.error'), t('deals.messageFailed'));
+      return;
+    }
+
+    setMessageInput('');
+    await loadCommunication(selectedTradeId);
+  }, [selectedTradeId, messageInput, loadCommunication, t]);
+
+  const handleStartCall = useCallback(async (callType) => {
+    if (!selectedTradeId) return;
+    const call = await startDealCall(selectedTradeId, callType);
+    if (!call?.room_url) {
+      Alert.alert(t('common.error'), t('deals.callFailed'));
+      return;
+    }
+    setConnectionStatusByTrade((prev) => ({ ...prev, [selectedTradeId]: 'connected' }));
+    await loadCommunication(selectedTradeId);
+    Linking.openURL(call.room_url);
+  }, [selectedTradeId, loadCommunication, t]);
+
+  const handleStartAICall = useCallback(async () => {
+    setAICallLoading(true);
+    try {
+      const toPhone = normalizeDialablePhone(user?.phone);
+      if (!toPhone) {
+        Alert.alert(t('common.error'), t('deals.aiCallPhoneMissing'));
+        return;
+      }
+
+      const result = await requestAIVoiceCall({
+        toPhone,
+        userId: Number.isFinite(Number(userId)) ? Number(userId) : undefined,
+        languageCode: language || 'en',
+        initialPrompt: 'Farmer requested AI assistance call from Deal section.',
+      });
+
+      if (!result?.ok) {
+        Alert.alert(t('common.error'), t('deals.aiCallFailed'));
+        return;
+      }
+
+      Alert.alert(t('common.ok'), t('deals.aiCallRequested'));
+    } finally {
+      setAICallLoading(false);
+    }
+  }, [language, normalizeDialablePhone, t, user?.phone, userId]);
+
+  const selectedTrade = trades.find((item) => item.trade_id === selectedTradeId) || null;
 
   // ─── Render ────────────────────────────────────────────────────────────
 
@@ -305,10 +437,128 @@ export default function DealScreen({ navigation }) {
                   <DealCard
                     key={trade.trade_id}
                     trade={trade}
+                    onOpenComm={handleOpenCommunication}
                     onAction={handleAction}
                     t={t}
+                    isCommActive={selectedTradeId === trade.trade_id}
                   />
                 ))
+              )}
+
+              {selectedTrade && (
+                <View style={styles.commPanel}>
+                  <View style={styles.commHeader}>
+                    <Text style={styles.commTitle}>{t('deals.communication')}</Text>
+                    <StatusBadge
+                      status={connectionStatusByTrade[selectedTrade.trade_id] || 'pending'}
+                      label={
+                        connectionStatusByTrade[selectedTrade.trade_id] === 'connected'
+                          ? t('deals.connected')
+                          : connectionStatusByTrade[selectedTrade.trade_id] === 'requested'
+                            ? t('deals.requested')
+                            : t('deals.pendingConnection')
+                      }
+                    />
+                  </View>
+
+                  <Text style={styles.commSubtext}>{t('deals.verifiedChannel')}</Text>
+
+                  <View style={styles.commActionRow}>
+                    <TouchableOpacity
+                      style={styles.actionBtnSecondary}
+                      onPress={() => handleRequestConnection(selectedTrade.trade_id)}
+                    >
+                      <MaterialCommunityIcons name="account-plus" size={16} color={COLORS.primary} />
+                      <Text style={styles.actionBtnSecondaryText}>{t('deals.connect')}</Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      style={styles.actionBtnSecondary}
+                      onPress={() => handleStartCall('audio')}
+                    >
+                      <MaterialCommunityIcons name="phone" size={16} color={COLORS.primary} />
+                      <Text style={styles.actionBtnSecondaryText}>{t('deals.audioCall')}</Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      style={styles.actionBtnSecondary}
+                      onPress={() => handleStartCall('video')}
+                    >
+                      <MaterialCommunityIcons name="video" size={16} color={COLORS.primary} />
+                      <Text style={styles.actionBtnSecondaryText}>{t('deals.videoCall')}</Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      style={[styles.actionBtnSecondary, aiCallLoading && styles.actionBtnDisabled]}
+                      onPress={handleStartAICall}
+                      disabled={aiCallLoading}
+                    >
+                      <MaterialCommunityIcons
+                        name={aiCallLoading ? 'progress-clock' : 'robot-happy-outline'}
+                        size={16}
+                        color={COLORS.primary}
+                      />
+                      <Text style={styles.actionBtnSecondaryText}>
+                        {aiCallLoading ? t('deals.calling') : t('deals.aiCall')}
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+
+                  <View style={styles.commSection}>
+                    <Text style={styles.commSectionTitle}>{t('deals.chat')}</Text>
+                    {commLoading ? (
+                      <ActivityIndicator size="small" color={COLORS.primary} />
+                    ) : messages.length === 0 ? (
+                      <Text style={styles.emptySubtext}>{t('deals.noMessages')}</Text>
+                    ) : (
+                      messages.slice(-10).map((msg) => (
+                        <View
+                          key={msg.id}
+                          style={[
+                            styles.messageBubble,
+                            msg.sender_id === userId ? styles.messageMine : styles.messageOther,
+                          ]}
+                        >
+                          <Text style={styles.messageText}>{msg.message_text}</Text>
+                          <Text style={styles.messageMeta}>{msg.status}</Text>
+                        </View>
+                      ))
+                    )}
+
+                    <View style={styles.messageInputRow}>
+                      <TextInput
+                        style={styles.messageInput}
+                        value={messageInput}
+                        onChangeText={setMessageInput}
+                        placeholder={t('deals.typeMessage')}
+                        placeholderTextColor={COLORS.outline}
+                      />
+                      <TouchableOpacity style={styles.actionBtn} onPress={handleSendMessage}>
+                        <MaterialCommunityIcons name="send" size={16} color="#FFF" />
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+
+                  <View style={styles.commSection}>
+                    <Text style={styles.commSectionTitle}>{t('deals.callHistory')}</Text>
+                    {callLogs.length === 0 ? (
+                      <Text style={styles.emptySubtext}>{t('deals.noCalls')}</Text>
+                    ) : (
+                      callLogs.slice(0, 5).map((call) => (
+                        <View key={call.id} style={styles.callRow}>
+                          <MaterialCommunityIcons
+                            name={call.call_type === 'video' ? 'video' : 'phone'}
+                            size={15}
+                            color={COLORS.primary}
+                          />
+                          <Text style={styles.callText}>
+                            {call.call_type} • {call.call_status}
+                          </Text>
+                        </View>
+                      ))
+                    )}
+                  </View>
+                </View>
               )}
             </View>
           )}
@@ -592,6 +842,10 @@ const styles = StyleSheet.create({
     color: COLORS.primary,
     fontWeight: '600',
   },
+  commBtnActive: {
+    borderWidth: 1,
+    borderColor: COLORS.primary,
+  },
   actionBtn: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -605,6 +859,115 @@ const styles = StyleSheet.create({
     ...TYPOGRAPHY.labelSmall,
     color: '#FFF',
     fontWeight: '600',
+  },
+  actionBtnSecondary: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    backgroundColor: COLORS.surface,
+    borderRadius: RADIUS.sm,
+    borderWidth: 1,
+    borderColor: COLORS.primary,
+  },
+  actionBtnDisabled: {
+    opacity: 0.7,
+  },
+  actionBtnSecondaryText: {
+    ...TYPOGRAPHY.labelSmall,
+    color: COLORS.primary,
+    fontWeight: '600',
+  },
+
+  // ─── Communication ────────────────────────────────────────────
+  commPanel: {
+    backgroundColor: COLORS.surface,
+    borderRadius: RADIUS.lg,
+    padding: SPACING.md,
+    ...ELEVATION.small,
+  },
+  commHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  commTitle: {
+    ...TYPOGRAPHY.titleSmall,
+    color: COLORS.onSurface,
+    fontWeight: '700',
+  },
+  commSubtext: {
+    ...TYPOGRAPHY.bodySmall,
+    color: COLORS.outline,
+    marginTop: 6,
+  },
+  commActionRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: SPACING.sm,
+    flexWrap: 'wrap',
+  },
+  commSection: {
+    marginTop: SPACING.md,
+    borderTopWidth: 1,
+    borderTopColor: COLORS.outlineVariant,
+    paddingTop: SPACING.sm,
+  },
+  commSectionTitle: {
+    ...TYPOGRAPHY.labelMedium,
+    color: COLORS.onSurface,
+    fontWeight: '700',
+    marginBottom: 8,
+  },
+  messageBubble: {
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    borderRadius: RADIUS.md,
+    marginBottom: 6,
+    maxWidth: '90%',
+  },
+  messageMine: {
+    alignSelf: 'flex-end',
+    backgroundColor: COLORS.infoContainer,
+  },
+  messageOther: {
+    alignSelf: 'flex-start',
+    backgroundColor: COLORS.surfaceVariant,
+  },
+  messageText: {
+    ...TYPOGRAPHY.bodySmall,
+    color: COLORS.onSurface,
+  },
+  messageMeta: {
+    ...TYPOGRAPHY.labelSmall,
+    color: COLORS.outline,
+    marginTop: 2,
+  },
+  messageInputRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 8,
+  },
+  messageInput: {
+    flex: 1,
+    borderWidth: 1,
+    borderColor: COLORS.outlineVariant,
+    borderRadius: RADIUS.sm,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    color: COLORS.onSurface,
+  },
+  callRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingVertical: 4,
+  },
+  callText: {
+    ...TYPOGRAPHY.bodySmall,
+    color: COLORS.onSurface,
   },
 
   // ─── Badge ─────────────────────────────────────────────────────────────

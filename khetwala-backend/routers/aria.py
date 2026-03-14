@@ -60,6 +60,7 @@ class AriaChatRequest(BaseModel):
 class AriaChatResponse(BaseModel):
     reply: str
     source: str = "gemini"
+    language_code: str = "en"
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -70,6 +71,36 @@ class AriaChatResponse(BaseModel):
 def _normalize_language(code: str) -> str:
     safe = (code or "en").strip().lower()
     return safe if safe in ("hi", "en", "mr", "kn", "gu") else "en"
+
+
+def _detect_language_from_text(text: str, fallback: str = "en") -> str:
+    sample = (text or "").strip()
+    if not sample:
+        return _normalize_language(fallback)
+
+    devanagari = sum(1 for ch in sample if "\u0900" <= ch <= "\u097F")
+    gujarati = sum(1 for ch in sample if "\u0A80" <= ch <= "\u0AFF")
+    kannada = sum(1 for ch in sample if "\u0C80" <= ch <= "\u0CFF")
+    latin = sum(1 for ch in sample if ("a" <= ch.lower() <= "z"))
+
+    if kannada > 0 and kannada >= max(devanagari, gujarati):
+        return "kn"
+    if gujarati > 0 and gujarati >= max(devanagari, kannada):
+        return "gu"
+
+    if devanagari > 0:
+        marathi_tokens = ["आहे", "नाही", "काय", "माझ", "कापणी", "पाऊस"]
+        if any(token in sample for token in marathi_tokens):
+            return "mr"
+        return "hi"
+
+    if latin > 0:
+        lowered = sample.lower()
+        english_tokens = ["weather", "market", "price", "scheme", "harvest", "help", "today"]
+        if any(token in lowered for token in english_tokens):
+            return "en"
+
+    return _normalize_language(fallback)
 
 
 def _build_system_prompt(ctx: AriaContext, lang: str) -> str:
@@ -108,6 +139,35 @@ def _build_system_prompt(ctx: AriaContext, lang: str) -> str:
     )
 
 
+def _local_aria_fallback(lang: str, ctx: AriaContext) -> str:
+    crop = ctx.crop if ctx.crop and ctx.crop != "Unknown" else None
+    district = ctx.district if ctx.district and ctx.district != "Unknown" else None
+
+    hints = {
+        "en": (
+            f"I can still help you right now. Please share your crop, district, and today’s concern"
+            f"{f' (for {crop} in {district})' if crop and district else ''}, and I will give a clear next step."
+        ),
+        "hi": (
+            f"Main abhi bhi madad kar sakta hoon. Aap apni fasal, district aur aaj ki dikkat bataiye"
+            f"{f' ({district} mein {crop} ke liye)' if crop and district else ''}, main turant seedha agla step bataunga."
+        ),
+        "mr": (
+            f"मी आत्ताही मदत करू शकतो. तुमचं पीक, जिल्हा आणि आजची समस्या सांगा"
+            f"{f' ({district} मधील {crop} साठी)' if crop and district else ''}, मी लगेच स्पष्ट पुढचा उपाय देतो."
+        ),
+        "kn": (
+            f"ನಾನು ಈಗಲೂ ನಿಮಗೆ ಸಹಾಯ ಮಾಡಬಹುದು. ನಿಮ್ಮ ಬೆಳೆ, ಜಿಲ್ಲೆ ಮತ್ತು ಇಂದಿನ ಸಮಸ್ಯೆ ಹೇಳಿ"
+            f"{f' ({district}ನಲ್ಲಿ {crop}ಗಾಗಿ)' if crop and district else ''}, ನಾನು ತಕ್ಷಣ ಸ್ಪಷ್ಟ ಮುಂದಿನ ಹೆಜ್ಜೆ ಹೇಳುತ್ತೇನೆ."
+        ),
+        "gu": (
+            f"હું અત્યારે પણ મદદ કરી શકું છું. તમારો પાક, જિલ્લો અને આજની સમસ્યા કહો"
+            f"{f' ({district}માં {crop} માટે)' if crop and district else ''}, હું તરત જ સ્પષ્ટ આગળનું પગલું કહું છું."
+        ),
+    }
+    return hints.get(lang, hints["en"])
+
+
 # ══════════════════════════════════════════════════════════════════════════════
 # Endpoint
 # ══════════════════════════════════════════════════════════════════════════════
@@ -118,7 +178,13 @@ async def aria_chat(payload: AriaChatRequest) -> Dict[str, Any]:
     """
     Send a chat message to ARIA and get a response via Google Gemini.
     """
-    lang = _normalize_language(payload.language_code)
+    requested_lang = _normalize_language(payload.language_code)
+    last_user_text = ""
+    for msg in reversed(payload.messages or []):
+        if msg.role == "user" and (msg.text or "").strip():
+            last_user_text = msg.text
+            break
+    lang = _detect_language_from_text(last_user_text, requested_lang)
     api_key = settings.google_api_key
 
     if not api_key:
@@ -159,10 +225,11 @@ async def aria_chat(payload: AriaChatRequest) -> Dict[str, Any]:
                 status=resp.status_code,
                 body=resp.text[:500],
             )
-            raise HTTPException(
-                status_code=502,
-                detail=f"Gemini returned {resp.status_code}",
-            )
+            return {
+                "reply": _local_aria_fallback(lang, payload.context),
+                "source": "fallback",
+                "language_code": lang,
+            }
 
         data = resp.json()
         reply_text = (
@@ -175,10 +242,18 @@ async def aria_chat(payload: AriaChatRequest) -> Dict[str, Any]:
 
         if not reply_text:
             logger.warning("Gemini returned empty content", response=data)
-            raise HTTPException(status_code=502, detail="Gemini returned empty response")
+            return {
+                "reply": _local_aria_fallback(lang, payload.context),
+                "source": "fallback",
+                "language_code": lang,
+            }
 
-        return {"reply": reply_text, "source": "gemini"}
+        return {"reply": reply_text, "source": "gemini", "language_code": lang}
 
     except httpx.HTTPError as exc:
         logger.error("Gemini network error", error=str(exc))
-        raise HTTPException(status_code=502, detail=f"Gemini network error: {exc}")
+        return {
+            "reply": _local_aria_fallback(lang, payload.context),
+            "source": "fallback",
+            "language_code": lang,
+        }

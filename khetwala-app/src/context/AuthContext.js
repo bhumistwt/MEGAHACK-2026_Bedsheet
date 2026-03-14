@@ -15,6 +15,14 @@ const api = axios.create({
   headers: { 'Content-Type': 'application/json' },
 });
 
+const normalizePhone = (phone) => {
+  const digits = String(phone || '').replace(/\D/g, '');
+  if (digits.length > 10 && digits.startsWith('91')) {
+    return digits.slice(-10);
+  }
+  return digits;
+};
+
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [token, setToken] = useState(null);
@@ -62,13 +70,18 @@ export function AuthProvider({ children }) {
   };
 
   const login = async (phone, password) => {
-    const { data } = await api.post('/auth/login', { phone, password });
+    const normalizedPhone = normalizePhone(phone);
+    const { data } = await api.post('/auth/login', { phone: normalizedPhone, password });
     await saveSession(data.access_token, data.user);
     return data;
   };
 
   const register = async (payload) => {
-    const { data } = await api.post('/auth/register', payload);
+    const body = {
+      ...payload,
+      phone: normalizePhone(payload?.phone),
+    };
+    const { data } = await api.post('/auth/register', body);
     await saveSession(data.access_token, data.user);
     return data;
   };
@@ -80,6 +93,7 @@ export function AuthProvider({ children }) {
       full_name: 'Guest User',
       district: 'Nashik',
       state: 'Maharashtra',
+      is_admin: false,
       created_at: null,
       is_guest: true,
     };

@@ -569,3 +569,75 @@ class SettlementRecord(Base):
     __table_args__ = (
         Index("ix_settlement_trade", "trade_id"),
     )
+
+
+class DealConnectionRequest(Base):
+    __tablename__ = "deal_connection_requests"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    requester_id = Column(Integer, nullable=False, index=True)
+    receiver_id = Column(Integer, nullable=False, index=True)
+    trade_id = Column(Integer, nullable=True, index=True)
+    status = Column(String(20), default="pending", index=True)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    responded_at = Column(DateTime, nullable=True)
+
+    __table_args__ = (
+        UniqueConstraint("requester_id", "receiver_id", "trade_id", name="uq_deal_connection_request"),
+        Index("ix_deal_conn_request_users", "requester_id", "receiver_id"),
+    )
+
+
+class DealContact(Base):
+    __tablename__ = "deal_contacts"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_a_id = Column(Integer, nullable=False, index=True)
+    user_b_id = Column(Integer, nullable=False, index=True)
+    created_from_request_id = Column(Integer, nullable=True, index=True)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+    __table_args__ = (
+        UniqueConstraint("user_a_id", "user_b_id", name="uq_deal_contact_pair"),
+        Index("ix_deal_contact_pair", "user_a_id", "user_b_id"),
+    )
+
+
+class DealMessage(Base):
+    __tablename__ = "deal_messages"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    trade_id = Column(Integer, nullable=False, index=True)
+    sender_id = Column(Integer, nullable=False, index=True)
+    receiver_id = Column(Integer, nullable=False, index=True)
+    message_text = Column(Text, nullable=False)
+    status = Column(String(20), default="sent", index=True)
+    sent_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    delivered_at = Column(DateTime, nullable=True)
+    read_at = Column(DateTime, nullable=True)
+
+    __table_args__ = (
+        Index("ix_deal_msg_trade_sent", "trade_id", "sent_at"),
+        Index("ix_deal_msg_receiver_status", "receiver_id", "status"),
+    )
+
+
+class DealCallLog(Base):
+    __tablename__ = "deal_call_logs"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    trade_id = Column(Integer, nullable=False, index=True)
+    caller_id = Column(Integer, nullable=False, index=True)
+    receiver_id = Column(Integer, nullable=False, index=True)
+    call_type = Column(String(10), nullable=False, index=True)  # audio | video
+    call_status = Column(String(20), default="initiated", index=True)
+    room_id = Column(String(120), nullable=False, unique=True, index=True)
+    room_url = Column(Text, nullable=False)
+    started_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    ended_at = Column(DateTime, nullable=True)
+    duration_seconds = Column(Integer, nullable=True)
+
+    __table_args__ = (
+        Index("ix_deal_call_trade_started", "trade_id", "started_at"),
+        Index("ix_deal_call_caller_receiver", "caller_id", "receiver_id"),
+    )

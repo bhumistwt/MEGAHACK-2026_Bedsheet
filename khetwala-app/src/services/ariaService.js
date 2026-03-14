@@ -18,6 +18,7 @@
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getDialectGreeting, getEncouragement, getMoodConfig } from '../data/dialects';
+import { detectLanguageCode } from './ariaVoiceEngine';
 
 // ─── Configuration ────────────────────────────────────────────────────────────
 
@@ -29,6 +30,9 @@ const GEMINI_URL =
 
 const CACHE_KEY = '@aria_conversation_cache';
 const CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
+const AGENT_TIMEOUT_MS = 12000;
+const BACKEND_TIMEOUT_MS = 10000;
+const DIRECT_TIMEOUT_MS = 10000;
 
 const LANGUAGE_LABELS = { hi: 'Hindi', en: 'English', mr: 'Marathi', gu: 'Gujarati', kn: 'Kannada' };
 
@@ -171,6 +175,16 @@ const normalizeLanguageCode = (code) => {
   return ['hi', 'en', 'mr', 'gu', 'kn'].includes(safe) ? safe : 'en';
 };
 
+const fetchWithTimeout = async (url, options, timeoutMs) => {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...(options || {}), signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+};
+
 
 // ─── Offline Cache ────────────────────────────────────────────────────────────
 
@@ -278,7 +292,7 @@ const fetchViaAgent = async ({ uiMessages, context, languageCode, userId, sessio
       user_id: userId || null,
       session_id: sessionId || null,
     }),
-  });
+  }, AGENT_TIMEOUT_MS);
 
   if (!response.ok) {
     const errText = await response.text();
@@ -327,7 +341,7 @@ const fetchViaBackend = async ({ uiMessages, context, languageCode }) => {
       },
       language_code: languageCode,
     }),
-  });
+  }, BACKEND_TIMEOUT_MS);
 
   if (!response.ok) {
     const errText = await response.text();
@@ -391,14 +405,14 @@ const fetchViaDirect = async ({ uiMessages, context, languageCode }) => {
   const fullPrompt = `${systemPrompt}\n\nConversation so far:\n${conversationText}\n\nARIA:`;
 
   console.log('[ARIA] Trying direct Gemini');
-  const response = await fetch(`${GEMINI_URL}?key=${GOOGLE_API_KEY}`, {
+  const response = await fetchWithTimeout(`${GEMINI_URL}?key=${GOOGLE_API_KEY}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       contents: [{ parts: [{ text: fullPrompt }] }],
       generationConfig: { temperature: 0.35, maxOutputTokens: 500 },
     }),
-  });
+  }, DIRECT_TIMEOUT_MS);
 
   if (!response.ok) {
     const text = await response.text();
@@ -552,6 +566,7 @@ export const fetchAriaReply = async ({
   // ─── F2: Detect negotiate intent in latest user message ───
   const lastUserMsg = [...(uiMessages || [])].reverse().find((m) => m.role === 'user');
   const negotiateCrop = lastUserMsg ? detectNegotiateIntent(lastUserMsg.text) : null;
+  const effectiveLanguageCode = detectLanguageCode(lastUserMsg?.text || '', normalizeLanguageCode(languageCode));
 
   // Enhance context with negotiation hints if detected
   const enrichedContext = { ...context };
@@ -563,11 +578,11 @@ export const fetchAriaReply = async ({
 
   // Strategy 1: Agent endpoint (primary)
   try {
-    const result = await fetchViaAgent({ uiMessages, context: enrichedContext, languageCode, userId, sessionId });
+    const result = await fetchViaAgent({ uiMessages, context: enrichedContext, languageCode: effectiveLanguageCode, userId, sessionId });
     // If negotiate intent, suggest navigation to simulator
     if (negotiateCrop && !result.navigateTo) {
       result.navigateTo = 'NegotiationSimulator';
-      result.reply += negotiateSuffix(languageCode);
+      result.reply += negotiateSuffix(effectiveLanguageCode);
     }
     return result;
   } catch (err) {
@@ -576,13 +591,13 @@ export const fetchAriaReply = async ({
 
   // Strategy 2: Backend proxy (legacy fallback)
   try {
-    const result = await fetchViaBackend({ uiMessages, context: enrichedContext, languageCode });
+    const result = await fetchViaBackend({ uiMessages, context: enrichedContext, languageCode: effectiveLanguageCode });
     if (lastUserMsg) {
       result.emotion = detectEmotion(lastUserMsg.text);
     }
     if (negotiateCrop && !result.navigateTo) {
       result.navigateTo = 'NegotiationSimulator';
-      result.reply += negotiateSuffix(languageCode);
+      result.reply += negotiateSuffix(effectiveLanguageCode);
     }
     return result;
   } catch (err) {
@@ -591,13 +606,13 @@ export const fetchAriaReply = async ({
 
   // Strategy 3: Direct Gemini from client
   try {
-    const result = await fetchViaDirect({ uiMessages, context: enrichedContext, languageCode });
+    const result = await fetchViaDirect({ uiMessages, context: enrichedContext, languageCode: effectiveLanguageCode });
     if (lastUserMsg) {
       result.emotion = detectEmotion(lastUserMsg.text);
     }
     if (negotiateCrop && !result.navigateTo) {
       result.navigateTo = 'NegotiationSimulator';
-      result.reply += negotiateSuffix(languageCode);
+      result.reply += negotiateSuffix(effectiveLanguageCode);
     }
     return result;
   } catch (err) {

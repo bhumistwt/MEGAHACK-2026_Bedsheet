@@ -74,6 +74,17 @@ export default function ProfileScreen({ navigation }) {
           <ProfileField icon="terrain" label="Soil Type" value={user?.soil_type} />
         </View>
 
+        {user?.is_admin ? (
+          <TouchableOpacity
+            style={styles.menuItem}
+            onPress={() => navigation.navigate('TelemetryAdmin')}
+          >
+            <MaterialCommunityIcons name="shield-account" size={22} color={COLORS.primary} />
+            <Text style={styles.menuText}>Admin Telemetry Dashboard</Text>
+            <MaterialCommunityIcons name="chevron-right" size={20} color={COLORS.onSurfaceVariant} />
+          </TouchableOpacity>
+        ) : null}
+
         <TouchableOpacity style={[styles.menuItem, styles.logoutItem]} onPress={handleLogout}>
           <MaterialCommunityIcons name="logout" size={22} color={COLORS.error} />
           <Text style={[styles.menuText, { color: COLORS.error }]}>Log out</Text>

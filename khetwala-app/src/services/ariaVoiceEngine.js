@@ -19,6 +19,55 @@ const GOOGLE_API_KEY = process.env.EXPO_PUBLIC_GOOGLE_API_KEY || '';
 const GEMINI_URL =
   'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent';
 
+const SUPPORTED_LANGUAGE_CODES = ['hi', 'en', 'mr', 'gu', 'kn'];
+const LANGUAGE_NAMES = {
+  hi: 'Hindi',
+  en: 'English',
+  mr: 'Marathi',
+  gu: 'Gujarati',
+  kn: 'Kannada',
+};
+
+const HINDI_HINTS = ['hai', 'nahi', 'kya', 'mera', 'meri', 'mausam', 'mandi'];
+const MARATHI_HINTS = ['aahe', 'nahi', 'kay', 'majha', 'majhi', 'havaman', 'kapani'];
+const ENGLISH_HINTS = ['weather', 'market', 'price', 'scheme', 'harvest', 'help', 'today'];
+
+export const detectLanguageCode = (text, fallback = 'en') => {
+  const safeFallback = SUPPORTED_LANGUAGE_CODES.includes(fallback) ? fallback : 'en';
+  const sample = String(text || '').trim();
+  if (!sample) return safeFallback;
+
+  let devanagari = 0;
+  let gujarati = 0;
+  let kannada = 0;
+  let latin = 0;
+
+  for (const ch of sample) {
+    const code = ch.charCodeAt(0);
+    if (code >= 0x0900 && code <= 0x097f) devanagari += 1;
+    else if (code >= 0x0a80 && code <= 0x0aff) gujarati += 1;
+    else if (code >= 0x0c80 && code <= 0x0cff) kannada += 1;
+    else if ((code >= 65 && code <= 90) || (code >= 97 && code <= 122)) latin += 1;
+  }
+
+  if (kannada > 0 && kannada >= Math.max(devanagari, gujarati)) return 'kn';
+  if (gujarati > 0 && gujarati >= Math.max(devanagari, kannada)) return 'gu';
+
+  if (devanagari > 0) {
+    const lower = sample.toLowerCase();
+    const mrScore = MARATHI_HINTS.reduce((acc, token) => (lower.includes(token) ? acc + 1 : acc), 0);
+    const hiScore = HINDI_HINTS.reduce((acc, token) => (lower.includes(token) ? acc + 1 : acc), 0);
+    return mrScore > hiScore ? 'mr' : 'hi';
+  }
+
+  if (latin > 0) {
+    const lower = sample.toLowerCase();
+    if (ENGLISH_HINTS.some((token) => lower.includes(token))) return 'en';
+  }
+
+  return safeFallback;
+};
+
 /* ─────────────────────────────────────────────────────────────────────────────
  * Audio Module (lazy-loaded)
  * ───────────────────────────────────────────────────────────────────────────── */
@@ -134,8 +183,11 @@ export const deleteAudio = (uri) => {
  * @param {string} mimeType     MIME type (default: audio/mp4 for AAC/m4a)
  * @returns {string}            Transcribed text, or '' if silence
  */
-export const transcribeAudio = async (audioBase64, mimeType = 'audio/mp4') => {
+export const transcribeAudio = async (audioBase64, mimeType = 'audio/mp4', lang = 'hi') => {
   if (!GOOGLE_API_KEY) throw new Error('GOOGLE_API_KEY missing');
+
+  const safeLang = SUPPORTED_LANGUAGE_CODES.includes(lang) ? lang : 'hi';
+  const languageName = LANGUAGE_NAMES[safeLang] || 'Hindi';
 
   const res = await fetch(`${GEMINI_URL}?key=${GOOGLE_API_KEY}`, {
     method: 'POST',
@@ -152,7 +204,7 @@ export const transcribeAudio = async (audioBase64, mimeType = 'audio/mp4') => {
             },
             {
               text:
-                'Transcribe this audio exactly as spoken. ' +
+                `Transcribe this ${languageName} audio exactly as spoken. ` +
                 'Output ONLY the transcription text, no explanations. ' +
                 'If the audio has no speech or only background noise, output exactly: [SILENCE]',
             },
@@ -226,7 +278,8 @@ const INTENT_MAP = [
     intent: 'navigate',
     screen: 'Market',
     keys: ['mandi', 'price', 'market', 'bhav', 'भाव', 'मंडी', 'दाम', 'rate',
-           'bazaar', 'बाजार', 'बाज़ार', 'किस भाव', 'कितने में'],
+           'bazaar', 'बाजार', 'बाज़ार', 'किस भाव', 'कितने में',
+           'बाजारभाव', 'भाव काय', 'બજાર ભાવ', 'મંડી ભાવ', 'ಮಾರುಕಟ್ಟೆ ಬೆಲೆ', 'ಮಂಡಿ ಬೆಲೆ'],
     say: 'Mandi bhav dikha rahi hoon.',
   },
   {
@@ -240,7 +293,8 @@ const INTENT_MAP = [
     intent: 'navigate',
     screen: 'Schemes',
     keys: ['scheme', 'yojana', 'योजना', 'government', 'सरकारी', 'subsidy',
-           'pradhan', 'प्रधान', 'PM Kisan', 'loan'],
+           'pradhan', 'प्रधान', 'PM Kisan', 'loan',
+           'योजना दाखवा', 'सरकारी योजना', 'યોજના', 'સરકારી યોજના', 'ಯೋಜನೆ', 'ಸರ್ಕಾರಿ ಯೋಜನೆ'],
     say: 'Sarkari yojnayein dikha rahi hoon.',
   },
   {
@@ -287,14 +341,16 @@ const INTENT_MAP = [
     intent: 'fetch',
     action: 'harvest',
     keys: ['harvest', 'कटाई', 'काट', 'when to cut', 'कब काटूं', 'कब तोड़ूं',
-           'ready to harvest', 'todhna'],
+           'ready to harvest', 'todhna',
+           'कापणी', 'कधी कापू', 'કાપણી', 'ક્યારે કાપવું', 'ಕೊಯ್ಲು', 'ಯಾವಾಗ ಕೊಯ್ಯಬೇಕು'],
     say: 'Katai ka sahi samay bata rahi hoon...',
   },
   {
     intent: 'fetch',
     action: 'weather',
     keys: ['weather', 'rain', 'मौसम', 'बारिश', 'temperature', 'तापमान',
-           'बादल', 'धूप', 'garmi', 'hava'],
+           'बादल', 'धूप', 'garmi', 'hava',
+           'हवामान', 'पाऊस', 'तापमान', 'હવામાન', 'વરસાદ', 'તાપમાન', 'ಹವಾಮಾನ', 'ಮಳೆ', 'ತಾಪಮಾನ'],
     say: 'Mausam ki jankari la rahi hoon...',
   },
   {
@@ -319,12 +375,192 @@ const INTENT_MAP = [
   },
 ];
 
+const LOCAL_RESPONSE_FALLBACK = {
+  hi: 'Samajh gayi, kaam kar rahi hoon.',
+  en: 'Got it, working on it now.',
+  mr: 'समजलो, लगेच काम सुरू करतो.',
+  gu: 'સમજી ગઈ, હમણાં કામ શરૂ કરું છું.',
+  kn: 'ಅರ್ಥವಾಯಿತು, ಈಗ ಕೆಲಸ ಪ್ರಾರಂಭಿಸುತ್ತಿದ್ದೇನೆ.',
+};
+
+const LOCAL_NETWORK_SLOW = {
+  hi: 'Network slow hai, thoda baad mein try karo.',
+  en: 'Network is slow right now. Please try again shortly.',
+  mr: 'नेटवर्क स्लो आहे, थोड्या वेळाने पुन्हा प्रयत्न करा.',
+  gu: 'નેટવર્ક ધીમું છે, થોડા સમય પછી ફરી પ્રયત્ન કરો.',
+  kn: 'ನೆಟ್‌ವರ್ಕ್ ನಿಧಾನವಾಗಿದೆ, ಸ್ವಲ್ಪ ಸಮಯದ ನಂತರ ಮತ್ತೆ ಪ್ರಯತ್ನಿಸಿ.',
+};
+
+const LOCAL_UNKNOWN = {
+  hi: 'Kuch samajh nahi aaya, ek baar phir bolo.',
+  en: 'I could not understand that. Please say it once again.',
+  mr: 'समजलं नाही, कृपया पुन्हा बोला.',
+  gu: 'સમજાયું નથી, કૃપા કરીને ફરી બોલો.',
+  kn: 'ಅರ್ಥವಾಗಲಿಲ್ಲ, ದಯವಿಟ್ಟು ಮತ್ತೊಮ್ಮೆ ಹೇಳಿ.',
+};
+
+const LOCAL_MATCH_RESPONSES = {
+  hi: {
+    'navigate:Market': 'Mandi bhav dikha rahi hoon.',
+    'navigate:Disease': 'Camera khol rahi hoon. Fasal ki photo lo.',
+    'navigate:Schemes': 'Sarkari yojnayein dikha rahi hoon.',
+    'navigate:MainTabs': 'Home page khol rahi hoon.',
+    'navigate:CropInput': 'Crop details ka page khol rahi hoon.',
+    'navigate:Spoilage': 'Storage risk check kar rahi hoon.',
+    'navigate:Alerts': 'Aapke alerts dikha rahi hoon.',
+    'navigate:ARIA': 'ARIA chat khol rahi hoon.',
+    'fetch:price_forecast': 'Bhav ka estimate nikal rahi hoon...',
+    'fetch:harvest': 'Katai ka sahi samay bata rahi hoon...',
+    'fetch:weather': 'Mausam ki jankari la rahi hoon...',
+    'fetch:best_mandi': 'Sabse acchi mandi dhundh rahi hoon...',
+    'fetch:full_advisory': 'Aapke liye poori salah tayyar kar rahi hoon...',
+    'stop': 'Theek hai, zarurat pade toh bolo.',
+  },
+  en: {
+    'navigate:Market': 'Opening mandi prices now.',
+    'navigate:Disease': 'Opening camera for crop scan.',
+    'navigate:Schemes': 'Opening government schemes now.',
+    'navigate:MainTabs': 'Opening home dashboard.',
+    'navigate:CropInput': 'Opening crop details screen.',
+    'navigate:Spoilage': 'Checking storage risk now.',
+    'navigate:Alerts': 'Opening your alerts now.',
+    'navigate:ARIA': 'Opening ARIA chat now.',
+    'fetch:price_forecast': 'Getting your price forecast now...',
+    'fetch:harvest': 'Checking best harvest timing now...',
+    'fetch:weather': 'Getting weather update now...',
+    'fetch:best_mandi': 'Finding the best mandi now...',
+    'fetch:full_advisory': 'Preparing your full advisory now...',
+    'stop': 'Okay, I am here whenever you need me.',
+  },
+  mr: {
+    'navigate:Market': 'मंडी भाव उघडत आहे.',
+    'navigate:Disease': 'कॅमेरा उघडत आहे. पिकाचा फोटो घ्या.',
+    'navigate:Schemes': 'सरकारी योजना उघडत आहे.',
+    'navigate:MainTabs': 'होम डॅशबोर्ड उघडत आहे.',
+    'navigate:CropInput': 'पीक तपशील पेज उघडत आहे.',
+    'navigate:Spoilage': 'स्टोरेज जोखीम तपासत आहे.',
+    'navigate:Alerts': 'तुमचे अलर्ट उघडत आहे.',
+    'navigate:ARIA': 'ARIA चॅट उघडत आहे.',
+    'fetch:price_forecast': 'भावाचा अंदाज काढत आहे...',
+    'fetch:harvest': 'कापणीचा योग्य वेळ तपासत आहे...',
+    'fetch:weather': 'हवामान माहिती आणत आहे...',
+    'fetch:best_mandi': 'सर्वोत्तम मंडी शोधत आहे...',
+    'fetch:full_advisory': 'तुमचा पूर्ण सल्ला तयार करत आहे...',
+    'stop': 'ठीक आहे, गरज लागली तर पुन्हा विचारा.',
+  },
+  gu: {
+    'navigate:Market': 'મંડી ભાવ ખોલી રહી છું.',
+    'navigate:Disease': 'કેમેરા ખોલી રહી છું. પાકનો ફોટો લો.',
+    'navigate:Schemes': 'સરકારી યોજનાઓ ખોલી રહી છું.',
+    'navigate:MainTabs': 'હોમ ડેશબોર્ડ ખોલી રહી છું.',
+    'navigate:CropInput': 'પાક વિગતો સ્ક્રીન ખોલી રહી છું.',
+    'navigate:Spoilage': 'સ્ટોરેજ જોખમ તપાસી રહી છું.',
+    'navigate:Alerts': 'તમારા એલર્ટ ખોલી રહી છું.',
+    'navigate:ARIA': 'ARIA ચેટ ખોલી રહી છું.',
+    'fetch:price_forecast': 'ભાવનો અંદાજ કાઢી રહી છું...',
+    'fetch:harvest': 'કાપણીનો યોગ્ય સમય તપાસી રહી છું...',
+    'fetch:weather': 'હવામાન માહિતી લાવી રહી છું...',
+    'fetch:best_mandi': 'સૌથી સારી મંડી શોધી રહી છું...',
+    'fetch:full_advisory': 'તમારો સંપૂર્ણ સલાહ રિપોર્ટ તૈયાર કરી રહી છું...',
+    'stop': 'બરાબર, જરૂર પડે ત્યારે ફરી પૂછો.',
+  },
+  kn: {
+    'navigate:Market': 'ಮಂಡಿ ಬೆಲೆಗಳನ್ನು ತೆರೆಯುತ್ತಿದ್ದೇನೆ.',
+    'navigate:Disease': 'ಕ್ಯಾಮೆರಾ ತೆರೆಯುತ್ತಿದ್ದೇನೆ. ಬೆಳೆ ಫೋಟೋ ತೆಗೆದುಕೊಳ್ಳಿ.',
+    'navigate:Schemes': 'ಸರಕಾರಿ ಯೋಜನೆಗಳನ್ನು ತೆರೆಯುತ್ತಿದ್ದೇನೆ.',
+    'navigate:MainTabs': 'ಹೋಮ್ ಡ್ಯಾಶ್‌ಬೋರ್ಡ್ ತೆರೆಯುತ್ತಿದ್ದೇನೆ.',
+    'navigate:CropInput': 'ಬೆಳೆ ವಿವರಗಳ ಪರದೆ ತೆರೆಯುತ್ತಿದ್ದೇನೆ.',
+    'navigate:Spoilage': 'ಸಂಗ್ರಹಣಾ ಅಪಾಯ ಪರಿಶೀಲಿಸುತ್ತಿದ್ದೇನೆ.',
+    'navigate:Alerts': 'ನಿಮ್ಮ ಅಲರ್ಟ್‌ಗಳನ್ನು ತೆರೆಯುತ್ತಿದ್ದೇನೆ.',
+    'navigate:ARIA': 'ARIA ಚಾಟ್ ತೆರೆಯುತ್ತಿದ್ದೇನೆ.',
+    'fetch:price_forecast': 'ಬೆಲೆ ಅಂದಾಜು ತರಲಾಗುತ್ತಿದೆ...',
+    'fetch:harvest': 'ಕೊಯ್ಲಿನ ಸರಿಯಾದ ಸಮಯ ಪರಿಶೀಲಿಸುತ್ತಿದ್ದೇನೆ...',
+    'fetch:weather': 'ಹವಾಮಾನ ಮಾಹಿತಿ ತರಲಾಗುತ್ತಿದೆ...',
+    'fetch:best_mandi': 'ಅತ್ಯುತ್ತಮ ಮಾರುಕಟ್ಟೆ ಹುಡುಕಲಾಗುತ್ತಿದೆ...',
+    'fetch:full_advisory': 'ನಿಮ್ಮ ಸಂಪೂರ್ಣ ಸಲಹೆ ವರದಿ ತಯಾರಿಸುತ್ತಿದ್ದೇನೆ...',
+    'stop': 'ಸರಿ, ಬೇಕಾದರೆ ಮತ್ತೆ ಕೇಳಿ.',
+  },
+};
+
+const getLocalMatchResponse = (entry, lang = 'hi') => {
+  const safeLang = SUPPORTED_LANGUAGE_CODES.includes(lang) ? lang : 'hi';
+  const key = entry.intent === 'stop'
+    ? 'stop'
+    : `${entry.intent}:${entry.intent === 'navigate' ? entry.screen : entry.action}`;
+  return LOCAL_MATCH_RESPONSES[safeLang]?.[key] || LOCAL_RESPONSE_FALLBACK[safeLang];
+};
+
+const normalizeIntentResult = (obj, lang = 'hi') => {
+  const safeLang = SUPPORTED_LANGUAGE_CODES.includes(lang) ? lang : 'hi';
+  const rawIntent = String(obj?.intent || 'chat').toLowerCase();
+  const rawAction = String(obj?.action || '').trim();
+  const actionLower = rawAction.toLowerCase();
+
+  const navMap = {
+    market: 'Market',
+    mandi: 'Market',
+    disease: 'Disease',
+    camera: 'Disease',
+    schemes: 'Schemes',
+    scheme: 'Schemes',
+    maintabs: 'MainTabs',
+    home: 'MainTabs',
+    cropinput: 'CropInput',
+    spoilage: 'Spoilage',
+    alerts: 'Alerts',
+    aria: 'ARIA',
+  };
+
+  const fetchMap = {
+    price_forecast: 'price_forecast',
+    forecast: 'price_forecast',
+    price: 'price_forecast',
+    harvest: 'harvest',
+    weather: 'weather',
+    best_mandi: 'best_mandi',
+    mandi: 'best_mandi',
+    full_advisory: 'full_advisory',
+    advisory: 'full_advisory',
+  };
+
+  if (rawIntent === 'navigate') {
+    const screen = navMap[actionLower] || rawAction;
+    if (!screen) return { intent: 'chat', response: LOCAL_UNKNOWN[safeLang] };
+    return {
+      intent: 'navigate',
+      screen,
+      params: obj?.params || {},
+      response: obj?.response || LOCAL_RESPONSE_FALLBACK[safeLang],
+    };
+  }
+
+  if (rawIntent === 'fetch') {
+    const action = fetchMap[actionLower] || rawAction;
+    if (!action) return { intent: 'chat', response: LOCAL_UNKNOWN[safeLang] };
+    return {
+      intent: 'fetch',
+      action,
+      params: obj?.params || {},
+      response: obj?.response || LOCAL_RESPONSE_FALLBACK[safeLang],
+    };
+  }
+
+  if (rawIntent === 'stop') {
+    return { intent: 'stop', response: obj?.response || LOCAL_MATCH_RESPONSES[safeLang]?.stop || LOCAL_RESPONSE_FALLBACK[safeLang] };
+  }
+
+  return {
+    intent: 'chat',
+    response: obj?.response || LOCAL_UNKNOWN[safeLang],
+  };
+};
+
 /**
  * Try fast local keyword matching.  Returns null if no match.
  * @param {string} text
  * @returns {IntentResult|null}
  */
-const matchLocal = (text) => {
+const matchLocal = (text, lang = 'hi') => {
   const lower = text.toLowerCase();
   for (const entry of INTENT_MAP) {
     for (const kw of entry.keys) {
@@ -334,7 +570,7 @@ const matchLocal = (text) => {
           screen: entry.screen,
           action: entry.action,
           params: {},
-          response: entry.say,
+          response: getLocalMatchResponse(entry, lang),
         };
       }
     }
@@ -345,7 +581,10 @@ const matchLocal = (text) => {
 /**
  * Use Gemini to understand complex / multilingual commands.
  */
-const parseWithGemini = async (transcript, ctx) => {
+const parseWithGemini = async (transcript, ctx, lang = 'hi') => {
+  const safeLang = SUPPORTED_LANGUAGE_CODES.includes(lang) ? lang : 'hi';
+  const outputLanguage = LANGUAGE_NAMES[safeLang] || 'Hindi';
+
   const prompt = `You are ARIA, a voice assistant for Indian farmers. Parse this voice command.
 
 Farmer said: "${transcript}"
@@ -369,7 +608,7 @@ Available actions:
 15. chat - General farming question
 
 Return ONLY valid JSON (no markdown fences):
-{"intent":"navigate|fetch|stop|chat","action":"screen or fetch_type","params":{},"response":"Short reply in Hindi/Hinglish, max 2 sentences, end with clear action: Aaj hi becho / Kal tak ruko / Doctor ko dikhao etc."}`;
+{"intent":"navigate|fetch|stop|chat","action":"screen or fetch_type","params":{},"response":"Short natural reply in ${outputLanguage}. Max 2 sentences. Keep it practical for farmers."}`;
 
   const res = await fetch(`${GEMINI_URL}?key=${GOOGLE_API_KEY}`, {
     method: 'POST',
@@ -388,16 +627,10 @@ Return ONLY valid JSON (no markdown fences):
 
   try {
     const obj = JSON.parse(raw);
-    return {
-      intent: obj.intent || 'chat',
-      screen: obj.intent === 'navigate' ? obj.action : undefined,
-      action: obj.intent === 'fetch' ? obj.action : undefined,
-      params: obj.params || {},
-      response: obj.response || 'Samajh gayi, kaam kar rahi hoon.',
-    };
+    return normalizeIntentResult(obj, safeLang);
   } catch {
     // Gemini returned free-form text – treat as chat reply
-    return { intent: 'chat', response: raw || 'Samajh nahi aaya, phir bolo.' };
+    return { intent: 'chat', response: raw || LOCAL_UNKNOWN[safeLang] };
   }
 };
 
@@ -409,19 +642,21 @@ Return ONLY valid JSON (no markdown fences):
  * @param {object} ctx  { crop, district }
  * @returns {Promise<IntentResult>}
  */
-export const parseIntent = async (transcript, ctx = {}) => {
+export const parseIntent = async (transcript, ctx = {}, lang = 'hi') => {
+  const safeLang = SUPPORTED_LANGUAGE_CODES.includes(lang) ? lang : 'hi';
+
   if (!transcript) {
-    return { intent: 'unknown', response: 'Kuch samajh nahi aaya, ek baar phir bolo.' };
+    return { intent: 'unknown', response: LOCAL_UNKNOWN[safeLang] };
   }
 
-  const local = matchLocal(transcript);
+  const local = matchLocal(transcript, safeLang);
   if (local) return local;
 
   try {
-    return await parseWithGemini(transcript, ctx);
+    return await parseWithGemini(transcript, ctx, safeLang);
   } catch (err) {
     console.warn('Gemini NLU error:', err.message);
-    return { intent: 'chat', response: 'Network slow hai, thoda baad mein try karo.' };
+    return { intent: 'chat', response: LOCAL_NETWORK_SLOW[safeLang] };
   }
 };
 
@@ -429,7 +664,7 @@ export const parseIntent = async (transcript, ctx = {}) => {
  * Text-to-Speech
  * ───────────────────────────────────────────────────────────────────────────── */
 
-const SPEECH_CODES = { hi: 'hi-IN', en: 'en-IN', mr: 'mr-IN' };
+const SPEECH_CODES = { hi: 'hi-IN', en: 'en-IN', mr: 'mr-IN', gu: 'gu-IN', kn: 'kn-IN' };
 
 /**
  * Speak text out loud. Returns a promise that resolves when speech finishes.
@@ -437,7 +672,7 @@ const SPEECH_CODES = { hi: 'hi-IN', en: 'en-IN', mr: 'mr-IN' };
 export const speak = (text, lang = 'hi') =>
   new Promise((resolve) => {
     Speech.speak(text, {
-      language: SPEECH_CODES[lang] || 'hi-IN',
+      language: SPEECH_CODES[lang] || 'en-IN',
       rate: 0.95,
       pitch: 1.0,
       onDone: resolve,

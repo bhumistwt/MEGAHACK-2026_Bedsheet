@@ -11,7 +11,13 @@ import {
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import * as Location from 'expo-location';
-import { DISTRICTS, getAllPricesForDistrict, getNearbyMandiPrices } from '../data/marketData';
+import {
+  DISTRICTS,
+  getAllPricesForDistrict,
+  getNearbyMandiPrices,
+  resolveDistrictName,
+  sendMarketTelemetry,
+} from '../data/marketData';
 import { COLORS, ELEVATION, RADIUS, SPACING, TYPOGRAPHY } from '../theme/colors';
 
 const POSITIVE = '#2E7D32';
@@ -56,16 +62,39 @@ export default function MarketScreen({ navigation }) {
   const [selectedDistrict, setSelectedDistrict] = useState('Nashik');
   const [selectedState, setSelectedState] = useState('Maharashtra');
   const [prices, setPrices] = useState([]);
+  const [sourceStatus, setSourceStatus] = useState('live');
+  const [lastUpdated, setLastUpdated] = useState(null);
   const [loading, setLoading] = useState(true);
   const [errorText, setErrorText] = useState('');
   const [locationEnabled, setLocationEnabled] = useState(false);
+
+  const statusLabel = useMemo(() => {
+    if (sourceStatus === 'cached') return 'Cached';
+    if (sourceStatus === 'fallback') return 'Fallback';
+    return 'Live';
+  }, [sourceStatus]);
+
+  const statusColor = useMemo(() => {
+    if (sourceStatus === 'cached') return COLORS.warning;
+    if (sourceStatus === 'fallback') return COLORS.error;
+    return COLORS.primary;
+  }, [sourceStatus]);
+
+  const lastUpdatedLabel = useMemo(() => {
+    if (!lastUpdated) return null;
+    const date = new Date(lastUpdated);
+    if (Number.isNaN(date.getTime())) return null;
+    return `Updated ${date.toLocaleString()}`;
+  }, [lastUpdated]);
 
   const loadByDistrict = useCallback(async (district, state) => {
     setLoading(true);
     setErrorText('');
     try {
-      const nextPrices = await getAllPricesForDistrict(district, state);
-      setPrices(nextPrices);
+      const result = await getAllPricesForDistrict(district, state);
+      setPrices(result.prices || []);
+      setSourceStatus(result.sourceStatus || 'live');
+      setLastUpdated(result.lastUpdated || null);
     } catch {
       setPrices([]);
       setErrorText('Could not fetch live mandi prices for this district.');
@@ -82,6 +111,12 @@ export default function MarketScreen({ navigation }) {
       const permission = await Location.requestForegroundPermissionsAsync();
       if (permission.status !== 'granted') {
         setLocationEnabled(false);
+        setErrorText('Location access denied. Showing selected district mandi prices.');
+        await sendMarketTelemetry('location_denied', {
+          district: selectedDistrict,
+          state: selectedState,
+          metadata: { permissionStatus: permission.status },
+        });
         await loadByDistrict(selectedDistrict, selectedState);
         return;
       }
@@ -96,7 +131,8 @@ export default function MarketScreen({ navigation }) {
       });
 
       const place = geocoded?.[0] || {};
-      const detectedDistrict = place.subregion || place.city || place.region || selectedDistrict;
+      const detectedDistrictRaw = place.subregion || place.city || place.region || selectedDistrict;
+      const detectedDistrict = resolveDistrictName(detectedDistrictRaw, selectedDistrict);
       const detectedState = place.region || selectedState;
 
       setSelectedDistrict(detectedDistrict);
@@ -110,7 +146,9 @@ export default function MarketScreen({ navigation }) {
         longitude: position.coords.longitude,
       });
 
-      setPrices(nextPrices);
+      setPrices(nextPrices.prices || []);
+      setSourceStatus(nextPrices.sourceStatus || 'live');
+      setLastUpdated(nextPrices.lastUpdated || null);
     } catch {
       setLocationEnabled(false);
       await loadByDistrict(selectedDistrict, selectedState);
@@ -141,6 +179,12 @@ export default function MarketScreen({ navigation }) {
         <View>
           <Text style={styles.title}>Market Prices</Text>
           <Text style={styles.subtitle}>{subtitle}</Text>
+          <View style={styles.statusRow}>
+            <View style={[styles.statusPill, { backgroundColor: `${statusColor}22` }]}>
+              <Text style={[styles.statusText, { color: statusColor }]}>{statusLabel}</Text>
+            </View>
+            {lastUpdatedLabel ? <Text style={styles.lastUpdatedText}>{lastUpdatedLabel}</Text> : null}
+          </View>
         </View>
       </View>
 
@@ -212,6 +256,25 @@ const styles = StyleSheet.create({
   },
   title: { ...TYPOGRAPHY.titleLarge, color: COLORS.onSurface, fontWeight: '700' },
   subtitle: { ...TYPOGRAPHY.bodySmall, color: COLORS.onSurfaceVariant, marginTop: 2 },
+  statusRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.xs,
+    marginTop: 6,
+  },
+  statusPill: {
+    borderRadius: 12,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+  },
+  statusText: {
+    ...TYPOGRAPHY.bodySmall,
+    fontWeight: '700',
+  },
+  lastUpdatedText: {
+    ...TYPOGRAPHY.bodySmall,
+    color: COLORS.onSurfaceVariant,
+  },
 
   body: { flex: 1 },
   bodyContent: { paddingBottom: SPACING.lg },

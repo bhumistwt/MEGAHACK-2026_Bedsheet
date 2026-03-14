@@ -20,6 +20,7 @@ import React, { useEffect, useRef, memo, useState } from 'react';
 import {
   Animated,
   Dimensions,
+  Keyboard,
   Modal,
   Pressable,
   StyleSheet,
@@ -32,19 +33,91 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { COLORS } from '../theme/colors';
 import { useAria, MODES } from '../context/AriaContext';
+import { useLanguage } from '../context/LanguageContext';
 
 const { width: SCREEN_W } = Dimensions.get('window');
 
 /* ─── Status configuration per mode ────────────────────────────────────────── */
 
-const STATUS_CFG = {
-  [MODES.IDLE]:           { text: '',                              icon: 'microphone',  color: COLORS.primary },
-  [MODES.WAKE_LISTENING]: { text: '"Hi Aria" sun rahi hoon...',    icon: 'ear-hearing', color: '#3B82F6'      },
-  [MODES.ACTIVATED]:      { text: 'Haan, bolo?',                  icon: 'microphone',  color: COLORS.accent  },
-  [MODES.LISTENING]:      { text: 'Sun rahi hoon…',               icon: 'microphone',  color: COLORS.accent  },
-  [MODES.PROCESSING]:     { text: 'Samajh rahi hoon…',            icon: 'brain',        color: '#F59E0B'      },
-  [MODES.SPEAKING]:       { text: 'Bol rahi hoon…',               icon: 'volume-high', color: COLORS.primary },
-  [MODES.EXECUTING]:      { text: 'Kaam kar rahi hoon…',          icon: 'cog-outline', color: COLORS.accent  },
+const STATUS_TEXT = {
+  hi: {
+    wake: '"Hi Aria" sun rahi hoon...',
+    active: 'Haan, bolo?',
+    listening: 'Sun rahi hoon…',
+    processing: 'Samajh rahi hoon…',
+    speaking: 'Bol rahi hoon…',
+    executing: 'Kaam kar rahi hoon…',
+    stopTap: 'Tap to stop',
+    youSaid: '🗣️  Aapne kaha',
+    ariaSaid: '🤖  ARIA',
+    wakeEnabled: '"Hi Aria" Active',
+    wakeDisabled: 'Enable "Hi Aria"',
+  },
+  en: {
+    wake: 'Listening for "Hi Aria"...',
+    active: 'Yes, tell me.',
+    listening: 'Listening…',
+    processing: 'Understanding…',
+    speaking: 'Speaking…',
+    executing: 'Working on it…',
+    stopTap: 'Tap to stop',
+    youSaid: '🗣️  You said',
+    ariaSaid: '🤖  ARIA',
+    wakeEnabled: '"Hi Aria" Active',
+    wakeDisabled: 'Enable "Hi Aria"',
+  },
+  mr: {
+    wake: '"Hi Aria" ऐकतेय...',
+    active: 'हो, सांगा.',
+    listening: 'ऐकतेय…',
+    processing: 'समजून घेत आहे…',
+    speaking: 'बोलत आहे…',
+    executing: 'काम सुरू आहे…',
+    stopTap: 'थांबवण्यासाठी टॅप करा',
+    youSaid: '🗣️  तुम्ही म्हणालात',
+    ariaSaid: '🤖  ARIA',
+    wakeEnabled: '"Hi Aria" सक्रिय',
+    wakeDisabled: '"Hi Aria" सक्षम करा',
+  },
+  gu: {
+    wake: '"Hi Aria" માટે સાંભળી રહી છું...',
+    active: 'હા, બોલો.',
+    listening: 'સાંભળી રહી છું…',
+    processing: 'સમજી રહી છું…',
+    speaking: 'બોલી રહી છું…',
+    executing: 'કામ કરી રહી છું…',
+    stopTap: 'બંધ કરવા ટૅપ કરો',
+    youSaid: '🗣️  તમે કહ્યું',
+    ariaSaid: '🤖  ARIA',
+    wakeEnabled: '"Hi Aria" સક્રિય',
+    wakeDisabled: '"Hi Aria" સક્રિય કરો',
+  },
+  kn: {
+    wake: '"Hi Aria" ಕೇಳಲು ಕಾಯುತ್ತಿದ್ದೇನೆ...',
+    active: 'ಹೌದು, ಹೇಳಿ.',
+    listening: 'ಕೇಳುತ್ತಿದ್ದೇನೆ…',
+    processing: 'ಅರ್ಥಮಾಡಿಕೊಳ್ಳುತ್ತಿದ್ದೇನೆ…',
+    speaking: 'ಮಾತನಾಡುತ್ತಿದ್ದೇನೆ…',
+    executing: 'ಕೆಲಸ ಮಾಡುತ್ತಿದ್ದೇನೆ…',
+    stopTap: 'ನಿಲ್ಲಿಸಲು ಟ್ಯಾಪ್ ಮಾಡಿ',
+    youSaid: '🗣️  ನೀವು ಹೇಳಿದ್ದು',
+    ariaSaid: '🤖  ARIA',
+    wakeEnabled: '"Hi Aria" ಸಕ್ರಿಯ',
+    wakeDisabled: '"Hi Aria" ಸಕ್ರಿಯಗೊಳಿಸಿ',
+  },
+};
+
+const getStatusCfg = (lang = 'hi') => {
+  const txt = STATUS_TEXT[lang] || STATUS_TEXT.hi;
+  return {
+    [MODES.IDLE]: { text: '', icon: 'microphone', color: COLORS.primary },
+    [MODES.WAKE_LISTENING]: { text: txt.wake, icon: 'ear-hearing', color: '#3B82F6' },
+    [MODES.ACTIVATED]: { text: txt.active, icon: 'microphone', color: COLORS.accent },
+    [MODES.LISTENING]: { text: txt.listening, icon: 'microphone', color: COLORS.accent },
+    [MODES.PROCESSING]: { text: txt.processing, icon: 'brain', color: '#F59E0B' },
+    [MODES.SPEAKING]: { text: txt.speaking, icon: 'volume-high', color: COLORS.primary },
+    [MODES.EXECUTING]: { text: txt.executing, icon: 'cog-outline', color: COLORS.accent },
+  };
 };
 
 /* ─── Waveform Bars Component ──────────────────────────────────────────────── */
@@ -137,6 +210,7 @@ const PulseRing = memo(({ active }) => {
 /* ─── Main Overlay ─────────────────────────────────────────────────────────── */
 
 export default function AriaOverlay() {
+  const { language } = useLanguage();
   const {
     mode,
     wakeWordEnabled,
@@ -153,6 +227,21 @@ export default function AriaOverlay() {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation();
   const [currentRoute, setCurrentRoute] = useState(null);
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
+
+  useEffect(() => {
+    const onShow = (event) => {
+      setKeyboardHeight(event?.endCoordinates?.height || 0);
+    };
+    const onHide = () => setKeyboardHeight(0);
+
+    const showSub = Keyboard.addListener('keyboardDidShow', onShow);
+    const hideSub = Keyboard.addListener('keyboardDidHide', onHide);
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, []);
 
   useEffect(() => {
     const getActiveRoute = (state) => {
@@ -174,9 +263,15 @@ export default function AriaOverlay() {
     return unsubscribe;
   }, [navigation]);
 
-  const cfg = STATUS_CFG[mode] || STATUS_CFG[MODES.IDLE];
+  const statusCfg = getStatusCfg(language || 'hi');
+  const labels = STATUS_TEXT[language || 'hi'] || STATUS_TEXT.hi;
+  const cfg = statusCfg[mode] || statusCfg[MODES.IDLE];
   const showWave = mode === MODES.LISTENING || mode === MODES.SPEAKING;
   const showStop = mode === MODES.LISTENING;
+  const responsiveRight = Math.max(12, Math.min(22, Math.floor(SCREEN_W * 0.045)));
+  const fabBottom = keyboardHeight > 0
+    ? keyboardHeight + 16
+    : 88 + insets.bottom;
 
   /* ── FAB icon logic ──────────────────────────────────────────────── */
   const fabIcon = wakeWordEnabled && mode === MODES.WAKE_LISTENING
@@ -186,8 +281,8 @@ export default function AriaOverlay() {
   return (
     <>
       {/* ═══ Floating Action Button ═══════════════════════════════════════ */}
-      {!overlayVisible && currentRoute !== 'ARIA' && (
-        <View style={[styles.fabWrap, { bottom: 85 + insets.bottom }]}>
+      {!overlayVisible && (
+        <View style={[styles.fabWrap, { bottom: fabBottom, right: responsiveRight }]}>
           <PulseRing active={wakeWordEnabled && mode === MODES.WAKE_LISTENING} />
           <Pressable
             onPress={onMicPress}
@@ -255,14 +350,14 @@ export default function AriaOverlay() {
                 activeOpacity={0.8}
               >
                 <MaterialCommunityIcons name="stop" size={28} color="#FFF" />
-                <Text style={styles.stopLabel}>Tap to stop</Text>
+                <Text style={styles.stopLabel}>{labels.stopTap}</Text>
               </TouchableOpacity>
             )}
 
             {/* ── transcript ───────────────────────────────────────── */}
             {transcript ? (
               <View style={styles.textBox}>
-                <Text style={styles.label}>🗣️  You said</Text>
+                <Text style={styles.label}>{labels.youSaid}</Text>
                 <Text style={styles.transcriptTxt}>{transcript}</Text>
               </View>
             ) : null}
@@ -270,7 +365,7 @@ export default function AriaOverlay() {
             {/* ── response ─────────────────────────────────────────── */}
             {response ? (
               <View style={styles.textBox}>
-                <Text style={styles.label}>🤖  ARIA</Text>
+                <Text style={styles.label}>{labels.ariaSaid}</Text>
                 <Text style={styles.responseTxt}>{response}</Text>
               </View>
             ) : null}
@@ -301,7 +396,7 @@ export default function AriaOverlay() {
                   wakeWordEnabled && { color: COLORS.accent, fontWeight: '600' },
                 ]}
               >
-                {wakeWordEnabled ? '"Hi Aria" Active' : 'Enable "Hi Aria"'}
+                {wakeWordEnabled ? labels.wakeEnabled : labels.wakeDisabled}
               </Text>
             </TouchableOpacity>
 

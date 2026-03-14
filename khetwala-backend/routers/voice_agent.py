@@ -176,6 +176,40 @@ def _normalize_language(code: Optional[str]) -> str:
     return safe if safe in SUPPORTED_LANGUAGES else "en"
 
 
+def _detect_language_from_text(text: str, fallback: str = "en") -> str:
+    sample = (text or "").strip()
+    if not sample:
+        return _normalize_language(fallback)
+
+    devanagari = sum(1 for ch in sample if "\u0900" <= ch <= "\u097F")
+    gujarati = sum(1 for ch in sample if "\u0A80" <= ch <= "\u0AFF")
+    kannada = sum(1 for ch in sample if "\u0C80" <= ch <= "\u0CFF")
+    latin = sum(1 for ch in sample if ("a" <= ch.lower() <= "z"))
+
+    if kannada > 0 and kannada >= max(devanagari, gujarati):
+        return "kn"
+    if gujarati > 0 and gujarati >= max(devanagari, kannada):
+        return "gu"
+
+    lowered = sample.lower()
+    marathi_tokens = ["आहे", "नाही", "काय", "माझ", "तुमच", "कापणी", "भाव", "पाऊस"]
+    hindi_tokens = ["है", "नहीं", "क्या", "मेरा", "मेरी", "आपका", "मौसम", "मंडी"]
+    marathi_score = sum(1 for token in marathi_tokens if token in sample)
+    hindi_score = sum(1 for token in hindi_tokens if token in sample)
+
+    if devanagari > 0:
+        if marathi_score > hindi_score:
+            return "mr"
+        return "hi"
+
+    if latin > 0:
+        english_tokens = ["weather", "market", "price", "scheme", "harvest", "today", "help"]
+        if any(token in lowered for token in english_tokens):
+            return "en"
+
+    return _normalize_language(fallback)
+
+
 def _normalize_catalog_path(path: str) -> str:
     normalized = (path or "").strip()
     if not normalized.startswith("/"):
@@ -781,7 +815,30 @@ async def _run_voice_agent_turn(
     last_feature_key: Optional[str] = None
 
     for _ in range(MAX_AGENT_TURNS):
-        gemini_resp = await _call_gemini(system_prompt, contents)
+        try:
+            gemini_resp = await _call_gemini(system_prompt, contents)
+        except HTTPException as exc:
+            logger.warning(
+                "Voice Gemini unavailable, switching to local fallback",
+                status_code=exc.status_code,
+                detail=str(exc.detail),
+            )
+            fallback_result = await _run_voice_agent_without_llm(
+                user_query=user_query,
+                user=user,
+                language_code=language_code,
+            )
+            fallback_actions = fallback_result.get("actions", [])
+            fallback_actions.append(
+                {
+                    "tool": "gemini_fallback",
+                    "args": {"reason": str(exc.detail)},
+                    "result": {"ok": True},
+                }
+            )
+            fallback_result["actions"] = fallback_actions
+            return fallback_result
+
         candidates = gemini_resp.get("candidates", [])
         if not candidates:
             break
@@ -893,7 +950,7 @@ async def invoke_feature_direct(payload: VoiceFeatureInvokeRequest) -> Dict[str,
 
 @router.post("/simulate", response_model=VoiceSimulateResponse)
 async def simulate_voice_turn(payload: VoiceSimulateRequest, db: Session = Depends(get_db)) -> Dict[str, Any]:
-    language_code = _normalize_language(payload.language_code)
+    language_code = _detect_language_from_text(payload.text, payload.language_code)
     user = db.query(User).filter(User.id == payload.user_id).first() if payload.user_id else None
 
     _upsert_call_log(
@@ -1068,6 +1125,14 @@ async def twilio_process_speech(
     user = db.query(User).filter(User.id == call.user_id).first() if call.user_id else None
     lang = _resolve_language(user, call.language_code)
     spoken_text = (SpeechResult or "").strip()
+
+    if spoken_text:
+        detected_lang = _detect_language_from_text(spoken_text, lang)
+        if detected_lang != lang:
+            lang = detected_lang
+            call.language_code = detected_lang
+            call.updated_at = _now()
+            db.commit()
 
     logger.info(
         "Voice STT payload received",

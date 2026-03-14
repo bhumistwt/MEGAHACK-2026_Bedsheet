@@ -15,6 +15,8 @@ import NetInfo from '@react-native-community/netinfo';
 // For USB debugging: Use 'http://localhost:8000' with `adb reverse tcp:8000 tcp:8000`
 // For WiFi: Set EXPO_PUBLIC_BACKEND_URL to your computer's LAN IP
 const BASE_URL = process.env.EXPO_PUBLIC_BACKEND_URL || 'http://localhost:8000';
+const TOKEN_KEY = '@khetwala_auth_token';
+const GUEST_TOKEN = '@guest_session';
 
 // Cache configuration
 const CACHE_PREFIX = 'khetwala_api_cache_v1';
@@ -28,6 +30,19 @@ const apiClient = axios.create({
     'Content-Type': 'application/json',
     'Accept': 'application/json',
   },
+});
+
+apiClient.interceptors.request.use(async (config) => {
+  try {
+    const token = await AsyncStorage.getItem(TOKEN_KEY);
+    if (token && token !== GUEST_TOKEN) {
+      config.headers = config.headers || {};
+      config.headers.Authorization = `Bearer ${token}`;
+    }
+  } catch {
+    // Ignore token read failures.
+  }
+  return config;
 });
 
 // ─── Axios response interceptor for unified error handling ──────────────────
@@ -1200,5 +1215,105 @@ export const fetchUserProofs = async (userId) => {
     return resp?.data?.proofs || [];
   } catch (e) {
     return [];
+  }
+};
+
+export const requestDealConnection = async (tradeId, receiverId = null) => {
+  try {
+    const payload = { trade_id: tradeId };
+    if (receiverId) payload.receiver_id = receiverId;
+    const resp = await apiClient.post('/deal-comm/connections/request', payload);
+    return resp?.data || null;
+  } catch (e) {
+    return null;
+  }
+};
+
+export const respondDealConnection = async (requestId, action) => {
+  try {
+    const resp = await apiClient.post('/deal-comm/connections/respond', {
+      request_id: requestId,
+      action,
+    });
+    return resp?.data || null;
+  } catch (e) {
+    return null;
+  }
+};
+
+export const fetchDealMessages = async (tradeId) => {
+  try {
+    const resp = await apiClient.get(`/deal-comm/messages/list?trade_id=${tradeId}`);
+    return resp?.data?.messages || [];
+  } catch (e) {
+    return [];
+  }
+};
+
+export const sendDealMessage = async (tradeId, messageText) => {
+  try {
+    const resp = await apiClient.post('/deal-comm/messages/send', {
+      trade_id: tradeId,
+      message_text: messageText,
+    });
+    return resp?.data?.message || null;
+  } catch (e) {
+    return null;
+  }
+};
+
+export const markDealMessagesRead = async (tradeId) => {
+  try {
+    const resp = await apiClient.post('/deal-comm/messages/mark-read', {
+      trade_id: tradeId,
+    });
+    return resp?.data || null;
+  } catch (e) {
+    return null;
+  }
+};
+
+export const startDealCall = async (tradeId, callType) => {
+  try {
+    const resp = await apiClient.post('/deal-comm/calls/start', {
+      trade_id: tradeId,
+      call_type: callType,
+    });
+    return resp?.data?.call || null;
+  } catch (e) {
+    return null;
+  }
+};
+
+export const endDealCall = async (roomId) => {
+  try {
+    const resp = await apiClient.post('/deal-comm/calls/end', { room_id: roomId });
+    return resp?.data?.call || null;
+  } catch (e) {
+    return null;
+  }
+};
+
+export const fetchDealCalls = async (tradeId) => {
+  try {
+    const resp = await apiClient.get(`/deal-comm/calls/list?trade_id=${tradeId}`);
+    return resp?.data?.calls || [];
+  } catch (e) {
+    return [];
+  }
+};
+
+export const requestAIVoiceCall = async ({ toPhone, userId, languageCode = 'en', initialPrompt = null }) => {
+  try {
+    const payload = {
+      to_phone: toPhone,
+      user_id: userId,
+      language_code: languageCode,
+      initial_prompt: initialPrompt,
+    };
+    const resp = await apiClient.post('/voice-agent/call/outbound', payload);
+    return resp?.data || null;
+  } catch (e) {
+    return null;
   }
 };
