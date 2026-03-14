@@ -1,0 +1,13 @@
+# Expo / React Native
+node_modules/
+.expo/
+web-build/
+dist/
+
+# Local env overrides (actual secrets go here, not in .env)
+.env.local
+.env.*.local
+
+# OS
+.DS_Store
+Thumbs.db

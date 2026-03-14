@@ -6,6 +6,7 @@
     "orientation": "portrait",
     "icon": "./assets/logo.png",
     "userInterfaceStyle": "light",
+    "newArchEnabled": true,
     "splash": {
       "image": "./assets/logo.png",
       "resizeMode": "contain",
@@ -16,14 +17,42 @@
       "adaptiveIcon": {
         "foregroundImage": "./assets/logo.png",
         "backgroundColor": "#F5F0E8"
-      }
+      },
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.READ_MEDIA_IMAGES",
+        "android.permission.READ_MEDIA_VIDEO",
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.MODIFY_AUDIO_SETTINGS"
+      ]
     },
     "ios": {
-      "bundleIdentifier": "com.pandeyashwin0.khetwala"
+      "bundleIdentifier": "com.pandeyashwin0.khetwala",
+      "infoPlist": {
+        "NSCameraUsageDescription": "Khetwala needs camera access for crop disease photo diagnosis.",
+        "NSMicrophoneUsageDescription": "Khetwala needs microphone access for ARIA voice assistant.",
+        "NSLocationWhenInUseUsageDescription": "Khetwala uses your location to find nearby mandis and schemes.",
+        "NSPhotoLibraryUsageDescription": "Khetwala needs photo library access to upload crop images."
+      }
     },
     "web": {
       "favicon": "./assets/logo.png"
     },
-    "assets": ["./assets"]
+    "assets": ["./assets"],
+    "plugins": [
+      "expo-camera",
+      "expo-location",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/logo.png",
+          "color": "#023c69"
+        }
+      ],
+      "expo-image-picker",
+      "expo-av"
+    ]
   }
 }
